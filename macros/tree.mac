@@ -1,0 +1,6 @@
+/control/verbose 0
+/run/initialize
+
+/vis/open ATree
+/vis/drawVolume
+/vis/viewer/flush

@@ -1,0 +1,10 @@
+/control/verbose 0
+/run/verbose 0
+/event/verbose 0
+/tracking/verbose 0
+
+/run/initialize
+
+/minimal/gun/energy 511 keV
+/minimal/gun/position 0 0 0 cm
+/run/beamOn 1000

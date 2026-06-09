@@ -1,0 +1,707 @@
+EXPLANATION OF THE MINIMAL GEANT4 EXAMPLE
+=========================================
+This file explains the minimal Geant4 project file by file.
+
+The goal of this project is to show the smallest useful structure of a Geant4
+application:
+
+  - one main program
+  - one geometry class
+  - one primary particle generator
+  - one standard physics list
+  - a few simple user action classes
+  - simple macro files for running the simulation
+
+No ROOT output, MCP geometry, parameterisation, or sensitive detector complexity
+is needed for this beginner version.
+
+
+1. CMakeLists.txt
+-----------------
+
+What this file does:
+
+  This is the build configuration file. CMake reads it to learn how to compile
+  the project.
+
+Does it inherit from a Geant4 class?
+
+  No. This is not C++ code. It is a CMake configuration file.
+
+Important parts:
+
+  - find_package(Geant4 REQUIRED ...)
+      Finds the Geant4 installation.
+
+  - include(${Geant4_USE_FILE})
+      Loads the compiler and linker settings needed by Geant4.
+
+  - include_directories(...)
+      Tells the compiler where to find header files.
+
+  - add_executable(...)
+      Creates the program executable.
+
+  - target_link_libraries(...)
+      Links the executable with the Geant4 libraries.
+
+When does Geant4 call this file?
+
+  Geant4 does not call this file. CMake uses it before the program is compiled.
+
+How it interacts with the rest of the project:
+
+  This file collects the source files in src/, the header files in include/,
+  and the main program file, then builds them into one executable.
+
+
+2. minimal_geant4.cc
+--------------------
+
+What this file does:
+
+  This is the main program. It is where the application starts.
+
+Does it inherit from a Geant4 class?
+
+  No. It contains the normal C++ main() function.
+
+Important functions:
+
+  - main(int argc, char** argv)
+      The entry point of the whole program.
+
+Important actions inside main():
+
+  - Creates the Geant4 run manager.
+  - Creates DetectorConstruction and gives it to the run manager.
+  - Creates a standard Geant4 reference physics list, such as FTFP_BERT.
+  - Creates ActionInitialization and gives it to the run manager.
+  - Starts batch mode if a macro file is provided.
+  - Starts interactive visualization mode if no macro file is provided.
+
+When does Geant4 call this function?
+
+  Geant4 does not call main(). The operating system calls main() when you run
+  the executable.
+
+How it interacts with the other files:
+
+  main() is the place where the main Geant4 building blocks are connected:
+
+  - DetectorConstruction defines the geometry.
+  - FTFP_BERT defines the physics.
+  - ActionInitialization defines the user actions.
+  - Macro files tell the program what commands to execute.
+
+
+3. include/DetectorConstruction.hh
+----------------------------------
+
+What this file does:
+
+  This is the header file for the detector construction class. It declares the
+  class, its public functions, and its private data members.
+
+Which Geant4 class does it inherit from?
+
+  DetectorConstruction inherits from:
+
+    G4VUserDetectorConstruction
+
+  This is the Geant4 base class for defining geometry.
+
+Important functions:
+
+  - Construct()
+      Declares the function that will build the geometry.
+
+  - GetDetectorLogicalVolume()
+      Returns a pointer to the detector logical volume. The stepping action uses
+      this pointer to know which volume is the detector.
+
+When does Geant4 call these functions?
+
+  - Geant4 calls Construct() during /run/initialize.
+  - GetDetectorLogicalVolume() is not called automatically by Geant4. It is
+    called by the SteppingAction code.
+
+How it interacts with other files:
+
+  DetectorConstruction is created in minimal_geant4.cc.
+  ActionInitialization receives a pointer to it.
+  SteppingAction later uses it to identify the detector volume.
+
+
+4. src/DetectorConstruction.cc
+------------------------------
+
+What this file does:
+
+  This file implements the geometry. In the minimal example, the geometry is:
+
+  - one world volume
+  - one detector volume placed inside the world
+
+Typical materials:
+
+  - World: air, often "G4_AIR"
+  - Detector: silicon, often "G4_Si"
+
+Important functions:
+
+  - DetectorConstruction::Construct()
+      Builds the materials, solids, logical volumes, and physical placements.
+
+  - DetectorConstruction::GetDetectorLogicalVolume()
+      Gives other classes access to the detector logical volume.
+
+When does Geant4 call Construct()?
+
+  Geant4 calls Construct() when the run manager initializes the simulation,
+  usually after the macro command:
+
+    /run/initialize
+
+Beginner concept:
+
+  Geant4 geometry usually has three levels:
+
+  - Solid:
+      The shape, for example a box.
+
+  - Logical volume:
+      The shape plus material and optional properties.
+
+  - Physical volume:
+      The placement of a logical volume inside another volume.
+
+How it interacts during one event:
+
+  During tracking, Geant4 uses this geometry to know where particles are.
+  When a particle moves from the world into the detector, SteppingAction can
+  detect that transition.
+
+
+5. include/PrimaryGeneratorAction.hh
+------------------------------------
+
+What this file does:
+
+  This header declares the class that creates the primary particle at the
+  beginning of each event.
+
+Which Geant4 class does it inherit from?
+
+  PrimaryGeneratorAction inherits from:
+
+    G4VUserPrimaryGeneratorAction
+
+Important functions:
+
+  - GeneratePrimaries(G4Event* event)
+      Declares the function that creates the primary particle.
+
+  - UpdateParticleDefinition()
+      Helper function used by the class to translate a particle name like
+      "gamma" or "e-" into a Geant4 particle definition.
+
+Important data members:
+
+  - G4ParticleGun
+      The simple Geant4 tool that shoots one or more primary particles.
+
+  - particle name
+  - energy
+  - starting position
+  - direction
+
+When does Geant4 call GeneratePrimaries()?
+
+  Geant4 calls GeneratePrimaries() once at the beginning of every event.
+
+How it interacts with other files:
+
+  ActionInitialization creates PrimaryGeneratorAction.
+  During each event, the run manager asks it to create the starting particle.
+
+
+6. src/PrimaryGeneratorAction.cc
+--------------------------------
+
+What this file does:
+
+  This file implements the particle gun.
+
+Typical behavior:
+
+  - Choose a particle type, for example gamma.
+  - Set an energy, for example 1 MeV.
+  - Set a starting position, for example (0, 0, -40 cm).
+  - Set a direction, for example (0, 0, 1).
+  - Create one primary vertex in each event.
+
+Important functions:
+
+  - PrimaryGeneratorAction::PrimaryGeneratorAction()
+      Constructor. It creates the G4ParticleGun and sets default particle
+      settings.
+
+  - GeneratePrimaries(G4Event* event)
+      Updates the gun settings and creates the primary particle for the event.
+
+  - UpdateParticleDefinition()
+      Checks that the requested particle exists in the Geant4 particle table.
+
+When does Geant4 call these functions?
+
+  - The constructor is called when ActionInitialization creates the action.
+  - GeneratePrimaries() is called once per event.
+  - UpdateParticleDefinition() is called by this class before shooting.
+
+How it interacts during one event:
+
+  This is the first user action involved in an event. It creates the particle
+  that Geant4 will then transport through the geometry.
+
+
+7. include/ActionInitialization.hh
+----------------------------------
+
+What this file does:
+
+  This header declares the class that registers all user actions.
+
+Which Geant4 class does it inherit from?
+
+  ActionInitialization inherits from:
+
+    G4VUserActionInitialization
+
+Important functions:
+
+  - Build()
+      Declares the function that creates and registers user actions.
+
+When does Geant4 call Build()?
+
+  Geant4 calls Build() during initialization, after the run manager has received
+  the ActionInitialization object.
+
+How it interacts with other files:
+
+  ActionInitialization creates:
+
+  - PrimaryGeneratorAction
+  - RunAction
+  - EventAction
+  - SteppingAction
+
+  This class is like a small registration desk for user actions.
+
+
+8. src/ActionInitialization.cc
+------------------------------
+
+What this file does:
+
+  This file implements the registration of the user actions.
+
+Important functions:
+
+  - ActionInitialization::Build()
+      Uses SetUserAction(...) to give Geant4 each action object.
+
+When does Geant4 call Build()?
+
+  During initialization.
+
+How it interacts during one event:
+
+  Build() itself is not called during each event. Instead, it prepares the
+  actions that Geant4 will call later:
+
+  - PrimaryGeneratorAction at the start of each event
+  - EventAction at the beginning and end of each event
+  - SteppingAction at every simulation step
+  - RunAction at the beginning and end of each run
+
+
+9. include/RunAction.hh
+-----------------------
+
+What this file does:
+
+  This header declares the class used for run-level messages.
+
+Which Geant4 class does it inherit from?
+
+  RunAction inherits from:
+
+    G4UserRunAction
+
+Important functions:
+
+  - BeginOfRunAction(const G4Run* run)
+      Called at the start of a run.
+
+  - EndOfRunAction(const G4Run* run)
+      Called at the end of a run.
+
+When does Geant4 call these functions?
+
+  - BeginOfRunAction() is called when /run/beamOn starts a run.
+  - EndOfRunAction() is called after all requested events are finished.
+
+How it interacts with other files:
+
+  It does not control particles or geometry. It simply prints run-level
+  information.
+
+
+10. src/RunAction.cc
+--------------------
+
+What this file does:
+
+  This file implements the run messages.
+
+Important functions:
+
+  - RunAction::BeginOfRunAction(...)
+      Prints that the run has started.
+
+  - RunAction::EndOfRunAction(...)
+      Prints that the run has ended and how many events were processed.
+
+When does Geant4 call these functions?
+
+  Once at the beginning and once at the end of a run.
+
+How it interacts during one event:
+
+  It does not run inside each event. It wraps the whole group of events.
+
+
+11. include/EventAction.hh
+--------------------------
+
+What this file does:
+
+  This header declares the class used for event-level messages.
+
+Which Geant4 class does it inherit from?
+
+  EventAction inherits from:
+
+    G4UserEventAction
+
+Important functions:
+
+  - BeginOfEventAction(const G4Event* event)
+      Called at the start of each event.
+
+  - EndOfEventAction(const G4Event* event)
+      Called at the end of each event.
+
+When does Geant4 call these functions?
+
+  - BeginOfEventAction() is called before particle tracking begins for an event.
+  - EndOfEventAction() is called after all tracks in that event are finished.
+
+How it interacts with other files:
+
+  It does not create particles and does not define geometry. It is useful for
+  counting events, printing progress, or later collecting event-level results.
+
+
+12. src/EventAction.cc
+----------------------
+
+What this file does:
+
+  This file implements event messages and a simple event counter.
+
+Important functions:
+
+  - EventAction::BeginOfEventAction(...)
+      Increments the event counter and prints the event ID.
+
+  - EventAction::EndOfEventAction(...)
+      Prints that the event ended.
+
+When does Geant4 call these functions?
+
+  For every event in the run.
+
+How it interacts during one event:
+
+  It marks the beginning and end of the event. Between those two calls,
+  PrimaryGeneratorAction creates the particle and Geant4 transports it step by
+  step through the detector geometry.
+
+
+13. include/SteppingAction.hh
+-----------------------------
+
+What this file does:
+
+  This header declares the class used to inspect particle steps.
+
+Which Geant4 class does it inherit from?
+
+  SteppingAction inherits from:
+
+    G4UserSteppingAction
+
+Important functions:
+
+  - UserSteppingAction(const G4Step* step)
+      Called for every particle step.
+
+Important data members:
+
+  - A pointer to DetectorConstruction.
+      This lets SteppingAction ask which logical volume is the detector.
+
+When does Geant4 call UserSteppingAction()?
+
+  Geant4 calls it after each step made by each track.
+
+How it interacts with other files:
+
+  SteppingAction uses DetectorConstruction::GetDetectorLogicalVolume() to
+  identify the detector. It then compares the particle's previous volume and
+  current volume to see if the particle just entered the detector.
+
+
+14. src/SteppingAction.cc
+-------------------------
+
+What this file does:
+
+  This file implements the detector-entry printout.
+
+Important functions:
+
+  - SteppingAction::UserSteppingAction(const G4Step* step)
+      Looks at the pre-step point and post-step point.
+
+Beginner concept:
+
+  A Geant4 step has two ends:
+
+  - pre-step point:
+      Where the step started.
+
+  - post-step point:
+      Where the step ended.
+
+  If the pre-step point is outside the detector and the post-step point is
+  inside the detector, the particle has just entered the detector.
+
+When does Geant4 call this function?
+
+  Many times during an event, once for every step of every track.
+
+How it interacts during one event:
+
+  When the primary particle reaches the detector boundary, this action prints:
+
+  - particle name
+  - track ID
+  - kinetic energy
+  - position where it entered the detector
+
+
+15. macros/run.mac
+------------------
+
+What this file does:
+
+  This is a Geant4 macro for batch running. It contains commands that Geant4
+  executes automatically.
+
+Does it inherit from a Geant4 class?
+
+  No. It is a text command file, not C++ code.
+
+Important commands:
+
+  - /run/initialize
+      Builds the geometry, physics, and user actions.
+
+  - /minimal/gun/particle gamma
+      Chooses the primary particle.
+
+  - /minimal/gun/energy 1 MeV
+      Chooses the primary particle energy.
+
+  - /minimal/gun/position 0 0 -40 cm
+      Chooses the starting position.
+
+  - /minimal/gun/direction 0 0 1
+      Chooses the direction.
+
+  - /run/beamOn 5
+      Runs five events.
+
+When does Geant4 call this file?
+
+  The main program asks Geant4 to execute it when you run:
+
+    ./minimal_geant4 macros/run.mac
+
+How it interacts with other files:
+
+  The macro controls the C++ classes through Geant4 commands.
+
+
+16. macros/vis.mac
+------------------
+
+What this file does:
+
+  This is a Geant4 macro for visualization.
+
+Does it inherit from a Geant4 class?
+
+  No. It is a text command file.
+
+Important commands:
+
+  - /run/initialize
+      Initializes the simulation.
+
+  - /vis/open ...
+      Opens a visualization driver.
+
+  - /vis/drawVolume
+      Draws the geometry.
+
+  - /vis/scene/add/trajectories smooth
+      Shows particle tracks.
+
+  - /run/beamOn 1
+      Runs one event for visualization.
+
+When does Geant4 call this file?
+
+  The main program executes it automatically when the program is started in
+  interactive mode, depending on how the minimal example main program is set up.
+
+How it interacts with other files:
+
+  It does not define geometry or physics. It tells Geant4 how to display the
+  geometry and trajectories created by the C++ code.
+
+
+17. README_MINIMAL.md
+---------------------
+
+What this file does:
+
+  This is human documentation. It explains how to compile, run, and modify the
+  minimal example.
+
+Does it inherit from a Geant4 class?
+
+  No.
+
+Important sections:
+
+  - project structure
+  - how to compile
+  - how to run
+  - how to change the primary particle settings
+  - how to add ROOT output later
+  - how to add MCP geometry later
+
+When does Geant4 call this file?
+
+  Never. It is only for the user.
+
+How it interacts with other files:
+
+  It explains the files, but it is not used by the executable.
+
+
+HOW THE FILES WORK TOGETHER DURING ONE EVENT
+============================================
+
+Here is the usual order of operations.
+
+Before the event:
+
+  1. You run the executable.
+
+  2. minimal_geant4.cc creates the run manager.
+
+  3. minimal_geant4.cc gives the run manager:
+
+       - DetectorConstruction
+       - FTFP_BERT physics list
+       - ActionInitialization
+
+  4. The macro calls:
+
+       /run/initialize
+
+  5. Geant4 calls DetectorConstruction::Construct().
+
+     The world volume and detector volume are built.
+
+  6. Geant4 calls ActionInitialization::Build().
+
+     The user actions are created and registered.
+
+During /run/beamOn:
+
+  1. Geant4 calls RunAction::BeginOfRunAction().
+
+     The run-start message is printed.
+
+  2. For each event, Geant4 calls EventAction::BeginOfEventAction().
+
+     The event-start message is printed.
+
+  3. Geant4 calls PrimaryGeneratorAction::GeneratePrimaries().
+
+     One primary particle is created by the particle gun.
+
+  4. Geant4 transports the particle through the geometry.
+
+     The physics list decides which physical processes can happen.
+
+  5. After each particle step, Geant4 calls
+     SteppingAction::UserSteppingAction().
+
+     The stepping action checks whether the particle has just entered the
+     detector.
+
+  6. If the particle entered the detector, SteppingAction prints basic
+     information.
+
+  7. When the event is finished, Geant4 calls
+     EventAction::EndOfEventAction().
+
+     The event-end message is printed.
+
+After all events:
+
+  1. Geant4 calls RunAction::EndOfRunAction().
+
+     The run-end message is printed.
+
+
+VERY SHORT SUMMARY
+==================
+
+  - minimal_geant4.cc connects everything.
+  - DetectorConstruction builds the world and detector.
+  - FTFP_BERT provides standard physics.
+  - PrimaryGeneratorAction creates the particle.
+  - RunAction prints run start/end messages.
+  - EventAction prints event start/end messages.
+  - SteppingAction notices when the particle enters the detector.
+  - Macro files choose settings and start the run.
