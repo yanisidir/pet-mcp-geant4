@@ -21,7 +21,6 @@ event-level coincidence statistics.
 - Geant4 11 with UI and visualization support
 - ROOT
 - CMake 3.16 or newer
-- A C++11-compatible compiler
 
 ## Build
 
