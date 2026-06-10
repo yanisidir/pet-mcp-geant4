@@ -3,6 +3,7 @@
 
 #include "ElectronChannelHitInfo.hh"
 #include "EventSummaryInfo.hh"
+#include "McpPlateStatsInfo.hh"
 #include "PhotonExitInfo.hh"
 
 #include "G4Threading.hh"
@@ -12,7 +13,7 @@
 class TFile;
 class TTree;
 
-// Sortie ROOT minimale : trois arbres indépendants.
+// Sortie ROOT minimale : quatre arbres indépendants.
 class RootOutput
 {
 public:
@@ -22,6 +23,7 @@ public:
   void FillElectronChannelHit(const ElectronChannelHitInfo& hit);
   void FillPhotonExit(const PhotonExitInfo& exitInfo);
   void FillEventSummary(const EventSummaryInfo& summary);
+  void FillMcpPlateStats(const McpPlateStatsInfo& stats);
   void Close();
 
 private:
@@ -38,6 +40,7 @@ private:
   TTree* fElectronChannelHitTree;
   TTree* fPhotonExitTree;
   TTree* fEventSummaryTree;
+  TTree* fMcpPlateStatsTree;
 
   // ElectronChannelHitTree
   int fElectronEventID;
@@ -78,18 +81,18 @@ private:
   int fSummaryElectronChannelCount;
   int fSummaryElectronChannelPlusCount;
   int fSummaryElectronChannelMinusCount;
-  int fSummaryElectronChannelPlusMcp0Count;
-  int fSummaryElectronChannelPlusMcp1Count;
-  int fSummaryElectronChannelPlusMcp2Count;
-  int fSummaryElectronChannelMinusMcp0Count;
-  int fSummaryElectronChannelMinusMcp1Count;
-  int fSummaryElectronChannelMinusMcp2Count;
   bool fSummaryHasElectronChannelPlus;
   bool fSummaryHasElectronChannelMinus;
   bool fSummaryIsCoincidence;
   int fSummaryPhotonExitCount;
   int fSummaryPhotonExitPlusCount;
   int fSummaryPhotonExitMinusCount;
+
+  // McpPlateStatsTree
+  int fPlateEventID;
+  int fPlateSide;
+  int fPlateMcpIndex;
+  int fPlateElectronChannelCount;
 };
 
 #endif

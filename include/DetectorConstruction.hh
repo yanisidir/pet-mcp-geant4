@@ -64,6 +64,9 @@ public:
                         G4int& side,
                         G4int& mcpIndex) const;
 
+  // Nombre de plaques dans chaque pile MCP.
+  G4int GetNumberOfMCPs() const;
+
   // Indique si le volume logique appartient au dernier MCP
   // de l'une des deux piles.
   G4bool IsLastMcpLogicalVolume(

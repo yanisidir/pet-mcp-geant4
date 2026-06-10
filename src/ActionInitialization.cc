@@ -23,7 +23,7 @@ void ActionInitialization::Build() const
   RunAction* runAction = new RunAction;
   SetUserAction(runAction);
 
-  EventAction* eventAction = new EventAction(runAction);
+  EventAction* eventAction = new EventAction(fDetector, runAction);
   SetUserAction(eventAction);
   SetUserAction(new SteppingAction(fDetector, eventAction));
   SetUserAction(new TrackingAction(eventAction));

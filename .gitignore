@@ -13,6 +13,12 @@ compile_commands.json
 *.eps
 *.ps
 *.svg
+/mcp_plate_coincidence_matrix.png
+/coincidence_electron_multiplicity.png
+/coincidence_plus_vs_minus.png
+/coincidence_plus_vs_minus_percent.png
+/simple_coincidence_plate_matrix_counts*.png
+/simple_coincidence_plate_matrix_percent*.png
 
 # Editor and operating-system files
 .vscode/

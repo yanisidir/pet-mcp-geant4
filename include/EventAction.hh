@@ -11,13 +11,15 @@
 #include <set>
 
 class G4Event;
+class DetectorConstruction;
 class RunAction;
 
 // EventAction déduplique les tracks et écrit le résumé de l'événement.
 class EventAction : public G4UserEventAction
 {
 public:
-  explicit EventAction(RunAction* runAction);
+  EventAction(const DetectorConstruction* detector,
+              RunAction* runAction);
   virtual ~EventAction();
 
   virtual void BeginOfEventAction(const G4Event* event);
@@ -34,6 +36,7 @@ public:
   G4bool SavePhotonExit(const PhotonExitInfo& exitInfo);
 
 private:
+  const DetectorConstruction* fDetector;
   RunAction* fRunAction;
   std::map<G4int, G4double> fProducedElectronGlobalTimes;
   std::set<G4int> fElectronChannelTrackIDs;

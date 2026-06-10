@@ -20,15 +20,17 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   TTree* electronTree = nullptr;
   TTree* photonTree = nullptr;
   TTree* eventTree = nullptr;
+  TTree* plateTree = nullptr;
 
   file->GetObject("ElectronChannelHitTree", electronTree);
   file->GetObject("PhotonExitTree", photonTree);
   file->GetObject("EventSummaryTree", eventTree);
+  file->GetObject("McpPlateStatsTree", plateTree);
 
-  if (!electronTree || !photonTree || !eventTree) {
+  if (!electronTree || !photonTree || !eventTree || !plateTree) {
     std::cerr << "Missing required tree in " << fileName << std::endl;
     std::cerr << "Expected: ElectronChannelHitTree, PhotonExitTree, "
-              << "EventSummaryTree" << std::endl;
+              << "EventSummaryTree, McpPlateStatsTree" << std::endl;
     file->Close();
     delete file;
     return;
@@ -132,15 +134,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   }
   std::cout << "  sides: +z=" << electronSideCounts[1]
             << ", -z=" << electronSideCounts[-1] << std::endl;
-  std::cout << "  hits by MCP:" << std::endl;
-  for (Int_t mcpIndex = 0; mcpIndex < 3; ++mcpIndex) {
-    std::cout << "    MCP " << mcpIndex
-              << ": +z="
-              << electronMcpCounts[std::make_pair(1, mcpIndex)]
-              << ", -z="
-              << electronMcpCounts[std::make_pair(-1, mcpIndex)]
-              << std::endl;
-  }
 
   // --------------------------------------------------------------------------
   // Gamma photons leaving the MCP
@@ -232,6 +225,53 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
             << ", -z=" << photonSideCounts[-1] << std::endl;
 
   // --------------------------------------------------------------------------
+  // Per-event statistics for each MCP plate
+  // --------------------------------------------------------------------------
+
+  Int_t plateEventID = 0;
+  Int_t plateSide = 0;
+  Int_t plateMcpIndex = -1;
+  Int_t plateElectronChannelCount = 0;
+
+  plateTree->SetBranchAddress("eventID", &plateEventID);
+  plateTree->SetBranchAddress("side", &plateSide);
+  plateTree->SetBranchAddress("mcpIndex", &plateMcpIndex);
+  plateTree->SetBranchAddress("electronChannelCount",
+                              &plateElectronChannelCount);
+
+  const Long64_t plateEntries = plateTree->GetEntries();
+  const Long64_t platePreview = std::min<Long64_t>(plateEntries, 12);
+  std::map<std::pair<Int_t, Int_t>, Long64_t> plateHitTotals;
+
+  std::cout << "\nMcpPlateStatsTree" << std::endl;
+  std::cout << "  entries: " << plateEntries << std::endl;
+
+  for (Long64_t i = 0; i < plateEntries; ++i) {
+    plateTree->GetEntry(i);
+    plateHitTotals[std::make_pair(plateSide, plateMcpIndex)] +=
+      plateElectronChannelCount;
+
+    if (i < platePreview) {
+      std::cout << "  [" << i << "]"
+                << " event=" << plateEventID
+                << " side=" << plateSide
+                << " mcpIndex=" << plateMcpIndex
+                << " electronChannelCount="
+                << plateElectronChannelCount
+                << std::endl;
+    }
+  }
+
+  std::cout << "  total channel electrons by plate:" << std::endl;
+  for (std::map<std::pair<Int_t, Int_t>, Long64_t>::const_iterator it =
+         plateHitTotals.begin();
+       it != plateHitTotals.end(); ++it) {
+    std::cout << "    side=" << it->first.first
+              << " mcpIndex=" << it->first.second
+              << ": " << it->second << std::endl;
+  }
+
+  // --------------------------------------------------------------------------
   // Event summary and consistency checks
   // --------------------------------------------------------------------------
 
@@ -240,12 +280,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   Int_t electronChannelCount = 0;
   Int_t electronChannelPlusCount = 0;
   Int_t electronChannelMinusCount = 0;
-  Int_t electronChannelPlusMcp0Count = 0;
-  Int_t electronChannelPlusMcp1Count = 0;
-  Int_t electronChannelPlusMcp2Count = 0;
-  Int_t electronChannelMinusMcp0Count = 0;
-  Int_t electronChannelMinusMcp1Count = 0;
-  Int_t electronChannelMinusMcp2Count = 0;
   Bool_t hasElectronChannelPlus = false;
   Bool_t hasElectronChannelMinus = false;
   Bool_t isCoincidence = false;
@@ -262,18 +296,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
                               &electronChannelPlusCount);
   eventTree->SetBranchAddress("electronChannelMinusCount",
                               &electronChannelMinusCount);
-  eventTree->SetBranchAddress("electronChannelPlusMcp0Count",
-                              &electronChannelPlusMcp0Count);
-  eventTree->SetBranchAddress("electronChannelPlusMcp1Count",
-                              &electronChannelPlusMcp1Count);
-  eventTree->SetBranchAddress("electronChannelPlusMcp2Count",
-                              &electronChannelPlusMcp2Count);
-  eventTree->SetBranchAddress("electronChannelMinusMcp0Count",
-                              &electronChannelMinusMcp0Count);
-  eventTree->SetBranchAddress("electronChannelMinusMcp1Count",
-                              &electronChannelMinusMcp1Count);
-  eventTree->SetBranchAddress("electronChannelMinusMcp2Count",
-                              &electronChannelMinusMcp2Count);
   eventTree->SetBranchAddress("hasElectronChannelPlus",
                               &hasElectronChannelPlus);
   eventTree->SetBranchAddress("hasElectronChannelMinus",
@@ -293,8 +315,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   Long64_t totalElectronChannelCount = 0;
   Long64_t totalElectronChannelPlusCount = 0;
   Long64_t totalElectronChannelMinusCount = 0;
-  Long64_t totalElectronChannelPlusMcpCount[3] = {0, 0, 0};
-  Long64_t totalElectronChannelMinusMcpCount[3] = {0, 0, 0};
   Long64_t totalPhotonExitCount = 0;
   Long64_t totalPhotonExitPlusCount = 0;
   Long64_t totalPhotonExitMinusCount = 0;
@@ -317,18 +337,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     totalElectronChannelCount += electronChannelCount;
     totalElectronChannelPlusCount += electronChannelPlusCount;
     totalElectronChannelMinusCount += electronChannelMinusCount;
-    totalElectronChannelPlusMcpCount[0] +=
-      electronChannelPlusMcp0Count;
-    totalElectronChannelPlusMcpCount[1] +=
-      electronChannelPlusMcp1Count;
-    totalElectronChannelPlusMcpCount[2] +=
-      electronChannelPlusMcp2Count;
-    totalElectronChannelMinusMcpCount[0] +=
-      electronChannelMinusMcp0Count;
-    totalElectronChannelMinusMcpCount[1] +=
-      electronChannelMinusMcp1Count;
-    totalElectronChannelMinusMcpCount[2] +=
-      electronChannelMinusMcp2Count;
     totalPhotonExitCount += photonExitCount;
     totalPhotonExitPlusCount += photonExitPlusCount;
     totalPhotonExitMinusCount += photonExitMinusCount;
@@ -360,14 +368,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
                 << " electronChannelCount=" << electronChannelCount
                 << " (+z=" << electronChannelPlusCount
                 << ", -z=" << electronChannelMinusCount << ")"
-                << " MCPs +z=("
-                << electronChannelPlusMcp0Count << ","
-                << electronChannelPlusMcp1Count << ","
-                << electronChannelPlusMcp2Count << ")"
-                << " -z=("
-                << electronChannelMinusMcp0Count << ","
-                << electronChannelMinusMcp1Count << ","
-                << electronChannelMinusMcp2Count << ")"
                 << " coincidence="
                 << (isCoincidence ? "yes" : "no")
                 << " photonExitCount=" << photonExitCount
@@ -427,14 +427,6 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     std::cout << "  channel electrons by side: +z="
               << totalElectronChannelPlusCount
               << ", -z=" << totalElectronChannelMinusCount << std::endl;
-    std::cout << "  channel electrons by MCP:" << std::endl;
-    for (Int_t mcpIndex = 0; mcpIndex < 3; ++mcpIndex) {
-      std::cout << "    MCP " << mcpIndex
-                << ": +z=" << totalElectronChannelPlusMcpCount[mcpIndex]
-                << ", -z="
-                << totalElectronChannelMinusMcpCount[mcpIndex]
-                << std::endl;
-    }
     std::cout << "  photon exits by side: +z="
               << totalPhotonExitPlusCount
               << ", -z=" << totalPhotonExitMinusCount << std::endl;
@@ -487,14 +479,30 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
                 totalElectronChannelMinusCount
                   ? " [OK]" : " [MISMATCH]")
             << std::endl;
-  const Long64_t totalElectronPlusByMcp =
-    totalElectronChannelPlusMcpCount[0] +
-    totalElectronChannelPlusMcpCount[1] +
-    totalElectronChannelPlusMcpCount[2];
-  const Long64_t totalElectronMinusByMcp =
-    totalElectronChannelMinusMcpCount[0] +
-    totalElectronChannelMinusMcpCount[1] +
-    totalElectronChannelMinusMcpCount[2];
+  Long64_t totalElectronPlusByMcp = 0;
+  Long64_t totalElectronMinusByMcp = 0;
+  for (std::map<std::pair<Int_t, Int_t>, Long64_t>::const_iterator it =
+         plateHitTotals.begin();
+       it != plateHitTotals.end(); ++it) {
+    if (it->first.first > 0) {
+      totalElectronPlusByMcp += it->second;
+    } else if (it->first.first < 0) {
+      totalElectronMinusByMcp += it->second;
+    }
+  }
+  const Long64_t expectedPlateEntries =
+    eventEntries*static_cast<Long64_t>(plateHitTotals.size());
+  std::cout << "  plate rows=" << plateEntries
+            << ", expected=" << expectedPlateEntries
+            << (plateEntries == expectedPlateEntries
+                  ? " [OK]" : " [MISMATCH]")
+            << std::endl;
+  std::cout << "  all MCP totals="
+            << totalElectronPlusByMcp + totalElectronMinusByMcp
+            << (totalElectronPlusByMcp + totalElectronMinusByMcp ==
+                totalElectronChannelCount
+                  ? " [OK]" : " [MISMATCH]")
+            << std::endl;
   std::cout << "  +z MCP totals=" << totalElectronPlusByMcp
             << (totalElectronPlusByMcp ==
                 totalElectronChannelPlusCount

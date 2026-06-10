@@ -20,7 +20,7 @@
 namespace
 {
   // MCP geometry
-  const G4int kNumberOfMCPs = 1;
+  const G4int kNumberOfMCPs = 3;
   const G4double kMcpLength = 3000.0*micrometer;
   const G4double kMcpDiameter = 50000.0*micrometer;
   const G4double kMcpRadius = 0.5*kMcpDiameter;
@@ -136,6 +136,11 @@ G4bool DetectorConstruction::GetChannelInfo(
   }
 
   return false;
+}
+
+G4int DetectorConstruction::GetNumberOfMCPs() const
+{
+  return kNumberOfMCPs;
 }
 
 G4bool DetectorConstruction::IsLastMcpLogicalVolume(
@@ -286,7 +291,7 @@ void DetectorConstruction::BuildMCP(
   // La transparence permet de voir les canaux à l'intérieur du verre.
   const G4Colour mcpColour =
     side > 0
-      ? G4Colour(0.10, 0.35, 1.00, 0.45)
+      ? G4Colour(0.10, 0.35, 1.00, 0.45) 
       : G4Colour(0.10, 0.80, 0.35, 0.45);
   G4VisAttributes* mcpVis = new G4VisAttributes(mcpColour);
   mcpVis->SetForceSolid(true);

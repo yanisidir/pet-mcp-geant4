@@ -36,6 +36,7 @@ RootOutput::RootOutput()
     fElectronChannelHitTree(nullptr),
     fPhotonExitTree(nullptr),
     fEventSummaryTree(nullptr),
+    fMcpPlateStatsTree(nullptr),
     fElectronEventID(0),
     fElectronTrackID(0),
     fElectronParentID(0),
@@ -66,18 +67,16 @@ RootOutput::RootOutput()
     fSummaryElectronChannelCount(0),
     fSummaryElectronChannelPlusCount(0),
     fSummaryElectronChannelMinusCount(0),
-    fSummaryElectronChannelPlusMcp0Count(0),
-    fSummaryElectronChannelPlusMcp1Count(0),
-    fSummaryElectronChannelPlusMcp2Count(0),
-    fSummaryElectronChannelMinusMcp0Count(0),
-    fSummaryElectronChannelMinusMcp1Count(0),
-    fSummaryElectronChannelMinusMcp2Count(0),
     fSummaryHasElectronChannelPlus(false),
     fSummaryHasElectronChannelMinus(false),
     fSummaryIsCoincidence(false),
     fSummaryPhotonExitCount(0),
     fSummaryPhotonExitPlusCount(0),
-    fSummaryPhotonExitMinusCount(0)
+    fSummaryPhotonExitMinusCount(0),
+    fPlateEventID(0),
+    fPlateSide(0),
+    fPlateMcpIndex(0),
+    fPlateElectronChannelCount(0)
 {
   fElectronVolumeName[0] = '\0';
   fElectronCreatorProcessName[0] = '\0';
@@ -118,6 +117,9 @@ void RootOutput::Open(const char* fileName)
   fEventSummaryTree =
     new TTree("EventSummaryTree",
               "One minimal row per event");
+  fMcpPlateStatsTree =
+    new TTree("McpPlateStatsTree",
+              "One row per event, side and MCP plate");
 
   fElectronChannelHitTree->Branch(
     "eventID", &fElectronEventID, "eventID/I");
@@ -206,30 +208,6 @@ void RootOutput::Open(const char* fileName)
     &fSummaryElectronChannelMinusCount,
     "electronChannelMinusCount/I");
   fEventSummaryTree->Branch(
-    "electronChannelPlusMcp0Count",
-    &fSummaryElectronChannelPlusMcp0Count,
-    "electronChannelPlusMcp0Count/I");
-  fEventSummaryTree->Branch(
-    "electronChannelPlusMcp1Count",
-    &fSummaryElectronChannelPlusMcp1Count,
-    "electronChannelPlusMcp1Count/I");
-  fEventSummaryTree->Branch(
-    "electronChannelPlusMcp2Count",
-    &fSummaryElectronChannelPlusMcp2Count,
-    "electronChannelPlusMcp2Count/I");
-  fEventSummaryTree->Branch(
-    "electronChannelMinusMcp0Count",
-    &fSummaryElectronChannelMinusMcp0Count,
-    "electronChannelMinusMcp0Count/I");
-  fEventSummaryTree->Branch(
-    "electronChannelMinusMcp1Count",
-    &fSummaryElectronChannelMinusMcp1Count,
-    "electronChannelMinusMcp1Count/I");
-  fEventSummaryTree->Branch(
-    "electronChannelMinusMcp2Count",
-    &fSummaryElectronChannelMinusMcp2Count,
-    "electronChannelMinusMcp2Count/I");
-  fEventSummaryTree->Branch(
     "hasElectronChannelPlus",
     &fSummaryHasElectronChannelPlus,
     "hasElectronChannelPlus/O");
@@ -253,6 +231,17 @@ void RootOutput::Open(const char* fileName)
     "photonExitMinusCount",
     &fSummaryPhotonExitMinusCount,
     "photonExitMinusCount/I");
+
+  fMcpPlateStatsTree->Branch(
+    "eventID", &fPlateEventID, "eventID/I");
+  fMcpPlateStatsTree->Branch(
+    "side", &fPlateSide, "side/I");
+  fMcpPlateStatsTree->Branch(
+    "mcpIndex", &fPlateMcpIndex, "mcpIndex/I");
+  fMcpPlateStatsTree->Branch(
+    "electronChannelCount",
+    &fPlateElectronChannelCount,
+    "electronChannelCount/I");
 
   G4cout << "ROOT output opened: " << threadFileName << G4endl;
 }
@@ -330,18 +319,6 @@ void RootOutput::FillEventSummary(const EventSummaryInfo& summary)
     summary.electronChannelPlusCount;
   fSummaryElectronChannelMinusCount =
     summary.electronChannelMinusCount;
-  fSummaryElectronChannelPlusMcp0Count =
-    summary.electronChannelPlusMcp0Count;
-  fSummaryElectronChannelPlusMcp1Count =
-    summary.electronChannelPlusMcp1Count;
-  fSummaryElectronChannelPlusMcp2Count =
-    summary.electronChannelPlusMcp2Count;
-  fSummaryElectronChannelMinusMcp0Count =
-    summary.electronChannelMinusMcp0Count;
-  fSummaryElectronChannelMinusMcp1Count =
-    summary.electronChannelMinusMcp1Count;
-  fSummaryElectronChannelMinusMcp2Count =
-    summary.electronChannelMinusMcp2Count;
   fSummaryHasElectronChannelPlus =
     summary.hasElectronChannelPlus;
   fSummaryHasElectronChannelMinus =
@@ -353,12 +330,26 @@ void RootOutput::FillEventSummary(const EventSummaryInfo& summary)
   fEventSummaryTree->Fill();
 }
 
+void RootOutput::FillMcpPlateStats(const McpPlateStatsInfo& stats)
+{
+  if (!fMcpPlateStatsTree) {
+    return;
+  }
+
+  fPlateEventID = stats.eventID;
+  fPlateSide = stats.side;
+  fPlateMcpIndex = stats.mcpIndex;
+  fPlateElectronChannelCount = stats.electronChannelCount;
+  fMcpPlateStatsTree->Fill();
+}
+
 void RootOutput::Close()
 {
   if (!fFile) {
     fElectronChannelHitTree = nullptr;
     fPhotonExitTree = nullptr;
     fEventSummaryTree = nullptr;
+    fMcpPlateStatsTree = nullptr;
     return;
   }
 
@@ -366,6 +357,7 @@ void RootOutput::Close()
   fElectronChannelHitTree->Write();
   fPhotonExitTree->Write();
   fEventSummaryTree->Write();
+  fMcpPlateStatsTree->Write();
   fFile->Close();
 
   delete fFile;
@@ -373,6 +365,7 @@ void RootOutput::Close()
   fElectronChannelHitTree = nullptr;
   fPhotonExitTree = nullptr;
   fEventSummaryTree = nullptr;
+  fMcpPlateStatsTree = nullptr;
 
   G4cout << "ROOT output closed." << G4endl;
 }

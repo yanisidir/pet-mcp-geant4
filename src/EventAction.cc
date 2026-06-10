@@ -1,13 +1,17 @@
 #include "EventAction.hh"
 
+#include "DetectorConstruction.hh"
 #include "EventSummaryInfo.hh"
+#include "McpPlateStatsInfo.hh"
 #include "RootOutput.hh"
 #include "RunAction.hh"
 
 #include "G4Event.hh"
 
-EventAction::EventAction(RunAction* runAction)
+EventAction::EventAction(const DetectorConstruction* detector,
+                         RunAction* runAction)
   : G4UserEventAction(),
+    fDetector(detector),
     fRunAction(runAction),
     fElectronChannelPlusCount(0),
     fElectronChannelMinusCount(0),
@@ -40,22 +44,13 @@ void EventAction::EndOfEventAction(const G4Event* event)
     static_cast<G4int>(fProducedElectronGlobalTimes.size());
   summary.electronChannelCount =
     static_cast<G4int>(fElectronChannelTrackIDs.size());
+
   summary.electronChannelPlusCount = fElectronChannelPlusCount;
   summary.electronChannelMinusCount = fElectronChannelMinusCount;
-  summary.electronChannelPlusMcp0Count =
-    fElectronChannelCountsByMcp[std::make_pair(1, 0)];
-  summary.electronChannelPlusMcp1Count =
-    fElectronChannelCountsByMcp[std::make_pair(1, 1)];
-  summary.electronChannelPlusMcp2Count =
-    fElectronChannelCountsByMcp[std::make_pair(1, 2)];
-  summary.electronChannelMinusMcp0Count =
-    fElectronChannelCountsByMcp[std::make_pair(-1, 0)];
-  summary.electronChannelMinusMcp1Count =
-    fElectronChannelCountsByMcp[std::make_pair(-1, 1)];
-  summary.electronChannelMinusMcp2Count =
-    fElectronChannelCountsByMcp[std::make_pair(-1, 2)];
+
   summary.hasElectronChannelPlus = fElectronChannelPlusCount > 0;
   summary.hasElectronChannelMinus = fElectronChannelMinusCount > 0;
+  
   summary.isCoincidence =
     summary.hasElectronChannelPlus &&
     summary.hasElectronChannelMinus;
@@ -65,6 +60,31 @@ void EventAction::EndOfEventAction(const G4Event* event)
   summary.photonExitMinusCount = fPhotonExitMinusCount;
 
   RootOutput::Instance()->FillEventSummary(summary);
+
+  const G4int numberOfMCPs =
+    fDetector ? fDetector->GetNumberOfMCPs() : 0;
+  const G4int sides[2] = {1, -1};
+  for (G4int sideIndex = 0; sideIndex < 2; ++sideIndex) {
+    const G4int side = sides[sideIndex];
+    for (G4int mcpIndex = 0;
+         mcpIndex < numberOfMCPs;
+         ++mcpIndex) {
+      const std::pair<G4int, G4int> key(side, mcpIndex); // pair of (side, mcpIndex) to look up the electron channel count for this plate
+      const std::map<std::pair<G4int, G4int>, G4int>::const_iterator // map from (side, mcpIndex) to electron channel count
+        found = fElectronChannelCountsByMcp.find(key);
+
+      McpPlateStatsInfo plateStats;
+      plateStats.eventID = summary.eventID;
+      plateStats.side = side;
+      plateStats.mcpIndex = mcpIndex;
+      plateStats.electronChannelCount =
+        found != fElectronChannelCountsByMcp.end()
+          ? found->second
+          : 0;
+      RootOutput::Instance()->FillMcpPlateStats(plateStats);
+    }
+  }
+
   if (fRunAction) {
     fRunAction->CountEvent(summary.hasElectronChannelPlus,
                            summary.hasElectronChannelMinus);
