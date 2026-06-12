@@ -19,18 +19,22 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
 
   TTree* electronTree = nullptr;
   TTree* photonTree = nullptr;
+  TTree* gammaInteractionTree = nullptr;
   TTree* eventTree = nullptr;
   TTree* plateTree = nullptr;
 
   file->GetObject("ElectronChannelHitTree", electronTree);
   file->GetObject("PhotonExitTree", photonTree);
+  file->GetObject("GammaInteractionTree", gammaInteractionTree);
   file->GetObject("EventSummaryTree", eventTree);
   file->GetObject("McpPlateStatsTree", plateTree);
 
-  if (!electronTree || !photonTree || !eventTree || !plateTree) {
+  if (!electronTree || !photonTree || !gammaInteractionTree ||
+      !eventTree || !plateTree) {
     std::cerr << "Missing required tree in " << fileName << std::endl;
     std::cerr << "Expected: ElectronChannelHitTree, PhotonExitTree, "
-              << "EventSummaryTree, McpPlateStatsTree" << std::endl;
+              << "GammaInteractionTree, EventSummaryTree, "
+              << "McpPlateStatsTree" << std::endl;
     file->Close();
     delete file;
     return;
@@ -225,6 +229,92 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
             << ", -z=" << photonSideCounts[-1] << std::endl;
 
   // --------------------------------------------------------------------------
+  // Physical gamma interactions inside MCP bodies
+  // --------------------------------------------------------------------------
+
+  Int_t gammaEventID = 0;
+  Int_t gammaTrackID = 0;
+  Int_t gammaParentID = 0;
+  Int_t gammaSide = 0;
+  Int_t gammaMcpIndex = -1;
+  Double_t gammaEnergy_keV = 0.0;
+  Double_t gammaTime_ns = 0.0;
+  Double_t gammaX_cm = 0.0;
+  Double_t gammaY_cm = 0.0;
+  Double_t gammaZ_cm = 0.0;
+  char gammaProcessName[64] = "";
+  char gammaVolumeName[64] = "";
+
+  gammaInteractionTree->SetBranchAddress("eventID", &gammaEventID);
+  gammaInteractionTree->SetBranchAddress("trackID", &gammaTrackID);
+  gammaInteractionTree->SetBranchAddress("parentID", &gammaParentID);
+  gammaInteractionTree->SetBranchAddress("side", &gammaSide);
+  gammaInteractionTree->SetBranchAddress("mcpIndex", &gammaMcpIndex);
+  gammaInteractionTree->SetBranchAddress("processName",
+                                         gammaProcessName);
+  gammaInteractionTree->SetBranchAddress("kineticEnergy_keV",
+                                         &gammaEnergy_keV);
+  gammaInteractionTree->SetBranchAddress("globalTime_ns",
+                                         &gammaTime_ns);
+  gammaInteractionTree->SetBranchAddress("x_cm", &gammaX_cm);
+  gammaInteractionTree->SetBranchAddress("y_cm", &gammaY_cm);
+  gammaInteractionTree->SetBranchAddress("z_cm", &gammaZ_cm);
+  gammaInteractionTree->SetBranchAddress("volumeName",
+                                         gammaVolumeName);
+
+  const Long64_t gammaInteractionEntries =
+    gammaInteractionTree->GetEntries();
+  const Long64_t gammaInteractionPreview =
+    std::min<Long64_t>(gammaInteractionEntries, 10);
+  std::map<std::string, Long64_t> gammaProcessCounts;
+  std::map<std::pair<Int_t, Int_t>, Long64_t>
+    gammaInteractionCountsByMcp;
+
+  std::cout << "\nGammaInteractionTree" << std::endl;
+  std::cout << "  total interactions: "
+            << gammaInteractionEntries << std::endl;
+
+  for (Long64_t i = 0; i < gammaInteractionEntries; ++i) {
+    gammaInteractionTree->GetEntry(i);
+    ++gammaProcessCounts[gammaProcessName];
+    ++gammaInteractionCountsByMcp[
+      std::make_pair(gammaSide, gammaMcpIndex)];
+
+    if (i < gammaInteractionPreview) {
+      std::cout << "  [" << i << "]"
+                << " event=" << gammaEventID
+                << " track=" << gammaTrackID
+                << " parent=" << gammaParentID
+                << " side=" << gammaSide
+                << " mcpIndex=" << gammaMcpIndex
+                << " process=" << gammaProcessName
+                << " E_before=" << gammaEnergy_keV << " keV"
+                << " t=" << gammaTime_ns << " ns"
+                << " pos=(" << gammaX_cm << ", "
+                << gammaY_cm << ", " << gammaZ_cm << ") cm"
+                << " volume=" << gammaVolumeName
+                << std::endl;
+    }
+  }
+
+  std::cout << "  interactions by process:" << std::endl;
+  for (std::map<std::string, Long64_t>::const_iterator it =
+         gammaProcessCounts.begin();
+       it != gammaProcessCounts.end(); ++it) {
+    std::cout << "    " << it->first << ": "
+              << it->second << std::endl;
+  }
+
+  std::cout << "  interactions by MCP plate:" << std::endl;
+  for (std::map<std::pair<Int_t, Int_t>, Long64_t>::const_iterator it =
+         gammaInteractionCountsByMcp.begin();
+       it != gammaInteractionCountsByMcp.end(); ++it) {
+    std::cout << "    side=" << it->first.first
+              << " mcpIndex=" << it->first.second
+              << ": " << it->second << std::endl;
+  }
+
+  // --------------------------------------------------------------------------
   // Per-event statistics for each MCP plate
   // --------------------------------------------------------------------------
 
@@ -242,14 +332,19 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   const Long64_t plateEntries = plateTree->GetEntries();
   const Long64_t platePreview = std::min<Long64_t>(plateEntries, 12);
   std::map<std::pair<Int_t, Int_t>, Long64_t> plateHitTotals;
+  std::map<std::pair<Int_t, Int_t>, Long64_t> plateActiveEventCounts;
 
   std::cout << "\nMcpPlateStatsTree" << std::endl;
   std::cout << "  entries: " << plateEntries << std::endl;
 
   for (Long64_t i = 0; i < plateEntries; ++i) {
     plateTree->GetEntry(i);
-    plateHitTotals[std::make_pair(plateSide, plateMcpIndex)] +=
-      plateElectronChannelCount;
+    const std::pair<Int_t, Int_t> plateKey =
+      std::make_pair(plateSide, plateMcpIndex);
+    plateHitTotals[plateKey] += plateElectronChannelCount;
+    if (plateElectronChannelCount > 0) {
+      ++plateActiveEventCounts[plateKey];
+    }
 
     if (i < platePreview) {
       std::cout << "  [" << i << "]"
@@ -262,13 +357,16 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     }
   }
 
-  std::cout << "  total channel electrons by plate:" << std::endl;
+  std::cout << "  channel statistics by plate:" << std::endl;
   for (std::map<std::pair<Int_t, Int_t>, Long64_t>::const_iterator it =
          plateHitTotals.begin();
        it != plateHitTotals.end(); ++it) {
     std::cout << "    side=" << it->first.first
               << " mcpIndex=" << it->first.second
-              << ": " << it->second << std::endl;
+              << ": total electrons=" << it->second
+              << ", events with electron="
+              << plateActiveEventCounts[it->first]
+              << std::endl;
   }
 
   // --------------------------------------------------------------------------
@@ -286,6 +384,11 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   Int_t photonExitCount = 0;
   Int_t photonExitPlusCount = 0;
   Int_t photonExitMinusCount = 0;
+  Int_t gammaInteractionCount = 0;
+  Int_t gammaPhotCount = 0;
+  Int_t gammaComptCount = 0;
+  Int_t gammaRaylCount = 0;
+  Int_t gammaConvCount = 0;
 
   eventTree->SetBranchAddress("eventID", &summaryEventID);
   eventTree->SetBranchAddress("electronProducedCount",
@@ -307,6 +410,16 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
                               &photonExitPlusCount);
   eventTree->SetBranchAddress("photonExitMinusCount",
                               &photonExitMinusCount);
+  eventTree->SetBranchAddress("gammaInteractionCount",
+                              &gammaInteractionCount);
+  eventTree->SetBranchAddress("gammaPhotCount",
+                              &gammaPhotCount);
+  eventTree->SetBranchAddress("gammaComptCount",
+                              &gammaComptCount);
+  eventTree->SetBranchAddress("gammaRaylCount",
+                              &gammaRaylCount);
+  eventTree->SetBranchAddress("gammaConvCount",
+                              &gammaConvCount);
 
   const Long64_t eventEntries = eventTree->GetEntries();
   const Long64_t eventPreview = std::min<Long64_t>(eventEntries, 10);
@@ -318,14 +431,21 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
   Long64_t totalPhotonExitCount = 0;
   Long64_t totalPhotonExitPlusCount = 0;
   Long64_t totalPhotonExitMinusCount = 0;
+  Long64_t totalGammaInteractionCount = 0;
+  Long64_t totalGammaPhotCount = 0;
+  Long64_t totalGammaComptCount = 0;
+  Long64_t totalGammaRaylCount = 0;
+  Long64_t totalGammaConvCount = 0;
   Long64_t eventsWithProducedElectron = 0;
   Long64_t eventsWithElectron = 0;
   Long64_t eventsDetectedPlus = 0;
   Long64_t eventsDetectedMinus = 0;
   Long64_t coincidenceEvents = 0;
   Long64_t eventsWithPhotonExit = 0;
+  Long64_t eventsWithGammaInteraction = 0;
   std::map<Int_t, Long64_t> producedMultiplicityCounts;
   std::map<Int_t, Long64_t> multiplicityCounts;
+  std::map<Int_t, Long64_t> gammaInteractionMultiplicityCounts;
 
   std::cout << "\nEventSummaryTree" << std::endl;
   std::cout << "  entries: " << eventEntries << std::endl;
@@ -340,6 +460,11 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     totalPhotonExitCount += photonExitCount;
     totalPhotonExitPlusCount += photonExitPlusCount;
     totalPhotonExitMinusCount += photonExitMinusCount;
+    totalGammaInteractionCount += gammaInteractionCount;
+    totalGammaPhotCount += gammaPhotCount;
+    totalGammaComptCount += gammaComptCount;
+    totalGammaRaylCount += gammaRaylCount;
+    totalGammaConvCount += gammaConvCount;
     if (electronProducedCount > 0) {
       ++eventsWithProducedElectron;
     }
@@ -358,8 +483,12 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     if (photonExitCount > 0) {
       ++eventsWithPhotonExit;
     }
+    if (gammaInteractionCount > 0) {
+      ++eventsWithGammaInteraction;
+    }
     producedMultiplicityCounts[electronProducedCount]++;
     multiplicityCounts[electronChannelCount]++;
+    gammaInteractionMultiplicityCounts[gammaInteractionCount]++;
 
     if (i < eventPreview) {
       std::cout << "  [" << i << "]"
@@ -373,6 +502,8 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
                 << " photonExitCount=" << photonExitCount
                 << " (+z=" << photonExitPlusCount
                 << ", -z=" << photonExitMinusCount << ")"
+                << " gammaInteractionCount="
+                << gammaInteractionCount
                 << std::endl;
     }
   }
@@ -413,6 +544,12 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
               << " ("
               << static_cast<Double_t>(eventsWithPhotonExit)/eventEntries
               << ")" << std::endl;
+    std::cout << "  events with gamma interaction: "
+              << eventsWithGammaInteraction << " / " << eventEntries
+              << " ("
+              << static_cast<Double_t>(eventsWithGammaInteraction)/
+                   eventEntries
+              << ")" << std::endl;
     std::cout << "  mean produced electrons/event: "
               << static_cast<Double_t>(totalElectronProducedCount)/
                    eventEntries
@@ -424,12 +561,22 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
     std::cout << "  mean photon exits/event: "
               << static_cast<Double_t>(totalPhotonExitCount)/eventEntries
               << std::endl;
+    std::cout << "  mean gamma interactions/event: "
+              << static_cast<Double_t>(totalGammaInteractionCount)/
+                   eventEntries
+              << std::endl;
     std::cout << "  channel electrons by side: +z="
               << totalElectronChannelPlusCount
               << ", -z=" << totalElectronChannelMinusCount << std::endl;
     std::cout << "  photon exits by side: +z="
               << totalPhotonExitPlusCount
               << ", -z=" << totalPhotonExitMinusCount << std::endl;
+    std::cout << "  gamma interactions by process:"
+              << " phot=" << totalGammaPhotCount
+              << ", compt=" << totalGammaComptCount
+              << ", Rayl=" << totalGammaRaylCount
+              << ", conv=" << totalGammaConvCount
+              << std::endl;
     std::cout << "  fraction of produced electrons reaching a channel: ";
     if (totalElectronProducedCount > 0) {
       std::cout
@@ -458,6 +605,15 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
               << ": " << it->second << " events" << std::endl;
   }
 
+  std::cout << "  gamma-interaction multiplicity distribution:"
+            << std::endl;
+  for (std::map<Int_t, Long64_t>::const_iterator it =
+         gammaInteractionMultiplicityCounts.begin();
+       it != gammaInteractionMultiplicityCounts.end(); ++it) {
+    std::cout << "    multiplicity " << it->first
+              << ": " << it->second << " events" << std::endl;
+  }
+
   std::cout << "\nConsistency checks:" << std::endl;
   std::cout << "  electron rows=" << electronEntries
             << ", sum(event electronChannelCount)="
@@ -469,6 +625,22 @@ void inspect_electrons(const char* fileName = "build/mcp_output_t0.root")
             << ", sum(event photonExitCount)="
             << totalPhotonExitCount
             << (photonEntries == totalPhotonExitCount
+                  ? " [OK]" : " [MISMATCH]")
+            << std::endl;
+  std::cout << "  gamma interaction rows="
+            << gammaInteractionEntries
+            << ", sum(event gammaInteractionCount)="
+            << totalGammaInteractionCount
+            << (gammaInteractionEntries == totalGammaInteractionCount
+                  ? " [OK]" : " [MISMATCH]")
+            << std::endl;
+  const Long64_t totalGammaProcesses =
+    totalGammaPhotCount +
+    totalGammaComptCount +
+    totalGammaRaylCount +
+    totalGammaConvCount;
+  std::cout << "  gamma process totals=" << totalGammaProcesses
+            << (totalGammaProcesses == totalGammaInteractionCount
                   ? " [OK]" : " [MISMATCH]")
             << std::endl;
   std::cout << "  electron side totals="

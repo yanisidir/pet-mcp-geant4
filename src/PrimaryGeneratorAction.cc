@@ -16,12 +16,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
 {
   fMessenger = new G4GenericMessenger(this,
                                       "/minimal/gun/",
-                                      "Simplified PET source settings");
+                                      "Gamma source settings");
 
   fMessenger->DeclarePropertyWithUnit("energy", "MeV", fEnergy,
-                                      "Energy of each annihilation photon");
+                                      "Gamma energy");
   fMessenger->DeclarePropertyWithUnit("position", "cm", fPosition,
-                                      "Common annihilation vertex");
+                                      "Gamma starting position");
 
   G4ParticleDefinition* gamma =
     G4ParticleTable::GetParticleTable()->FindParticle("gamma");
@@ -52,11 +52,9 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event)
   fParticleGun->SetParticleEnergy(fEnergy);
   fParticleGun->SetParticlePosition(fPosition);
 
-  // Premier photon: vers la pile MCP située du côté +z.
   fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0.0, 0.0, 1.0));
   fParticleGun->GeneratePrimaryVertex(event);
 
-  // Second photon: même événement et même vertex, direction opposée.
-  fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0.0, 0.0, -1.0));
-  fParticleGun->GeneratePrimaryVertex(event);
+  // fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0.0, 0.0, -1.0));
+  // fParticleGun->GeneratePrimaryVertex(event);
 }

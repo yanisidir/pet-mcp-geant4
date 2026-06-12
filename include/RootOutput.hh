@@ -3,6 +3,8 @@
 
 #include "ElectronChannelHitInfo.hh"
 #include "EventSummaryInfo.hh"
+#include "GammaInteractionInfo.hh"
+#include "GammaMcpEntryInfo.hh"
 #include "McpPlateStatsInfo.hh"
 #include "PhotonExitInfo.hh"
 
@@ -13,7 +15,7 @@
 class TFile;
 class TTree;
 
-// Sortie ROOT minimale : quatre arbres indépendants.
+// Sortie ROOT : arbres indépendants pour les observables de simulation.
 class RootOutput
 {
 public:
@@ -22,6 +24,8 @@ public:
   void Open(const char* fileName);
   void FillElectronChannelHit(const ElectronChannelHitInfo& hit);
   void FillPhotonExit(const PhotonExitInfo& exitInfo);
+  void FillGammaInteraction(const GammaInteractionInfo& info);
+  void FillGammaMcpEntry(const GammaMcpEntryInfo& entry);
   void FillEventSummary(const EventSummaryInfo& summary);
   void FillMcpPlateStats(const McpPlateStatsInfo& stats);
   void Close();
@@ -39,6 +43,8 @@ private:
   TFile* fFile;
   TTree* fElectronChannelHitTree;
   TTree* fPhotonExitTree;
+  TTree* fGammaInteractionTree;
+  TTree* fGammaMcpEntryTree;
   TTree* fEventSummaryTree;
   TTree* fMcpPlateStatsTree;
 
@@ -75,6 +81,33 @@ private:
   char fPhotonVolumeName[64];
   char fPhotonStepProcessName[64];
 
+  // GammaInteractionTree
+  int fGammaEventID;
+  int fGammaTrackID;
+  int fGammaParentID;
+  int fGammaSide;
+  int fGammaMcpIndex;
+  char fGammaProcessName[64];
+  double fGammaKineticEnergy;
+  double fGammaGlobalTime;
+  double fGammaX;
+  double fGammaY;
+  double fGammaZ;
+  char fGammaVolumeName[64];
+
+  // GammaMcpEntryTree
+  int fGammaEntryEventID;
+  int fGammaEntryTrackID;
+  int fGammaEntryParentID;
+  int fGammaEntrySide;
+  int fGammaEntryMcpIndex;
+  double fGammaEntryKineticEnergy;
+  double fGammaEntryGlobalTime;
+  double fGammaEntryX;
+  double fGammaEntryY;
+  double fGammaEntryZ;
+  char fGammaEntryVolumeName[64];
+
   // EventSummaryTree
   int fSummaryEventID;
   int fSummaryElectronProducedCount;
@@ -87,6 +120,11 @@ private:
   int fSummaryPhotonExitCount;
   int fSummaryPhotonExitPlusCount;
   int fSummaryPhotonExitMinusCount;
+  int fSummaryGammaInteractionCount;
+  int fSummaryGammaPhotCount;
+  int fSummaryGammaComptCount;
+  int fSummaryGammaRaylCount;
+  int fSummaryGammaConvCount;
 
   // McpPlateStatsTree
   int fPlateEventID;

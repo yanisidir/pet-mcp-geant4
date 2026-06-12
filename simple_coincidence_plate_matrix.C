@@ -57,7 +57,7 @@ void simple_coincidence_plate_matrix(
 
   // Modifier uniquement ces deux valeurs pour étudier un autre cas.
   const Int_t kRequiredPlusCount = 1;
-  const Int_t kRequiredMinusCount = 2;
+  const Int_t kRequiredMinusCount = 1;
 
   std::ostringstream selectionText;
   selectionText << "N(+z)=" << kRequiredPlusCount

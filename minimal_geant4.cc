@@ -3,6 +3,8 @@
 
 #include "FTFP_BERT.hh"
 #include "G4EmLivermorePhysics.hh"
+#include "G4EmPenelopePhysics.hh"
+#include "G4EmStandardPhysics_option4.hh"
 #include "G4RunManagerFactory.hh"
 #include "G4SteppingVerbose.hh"
 #include "G4UIExecutive.hh"
@@ -31,10 +33,13 @@ int main(int argc, char** argv)
   //auto* runManager =
     //G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
 
-  auto* runManager = G4RunManagerFactory::CreateRunManager();
+  // auto* runManager = G4RunManagerFactory::CreateRunManager();
 
-  G4int nThreads = 1;
-  runManager->SetNumberOfThreads(nThreads);
+  // G4int nThreads = 1;
+  // runManager->SetNumberOfThreads(nThreads);
+
+  auto* runManager =
+    G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
 
   DetectorConstruction* detector = new DetectorConstruction;
   runManager->SetUserInitialization(detector);
@@ -42,7 +47,20 @@ int main(int argc, char** argv)
   // Keep the complete FTFP_BERT reference list, but replace its standard
   // electromagnetic physics with the Livermore low-energy EM models.
   FTFP_BERT* physicsList = new FTFP_BERT(0);  // 0 means "don't print verbose output"
+
+  // Option 1 : physique EM standard Geant4
+  // Rien à remplacer
+
+  // Option 2 : physique EM Livermore
   physicsList->ReplacePhysics(new G4EmLivermorePhysics(0));
+
+  // Option 3 : physique EM Penelope
+  // physicsList->ReplacePhysics(new G4EmPenelopePhysics(0));
+
+  // Option 4 : physique EM option 4
+  // physicsList->ReplacePhysics(new G4EmStandardPhysics_option4(0));
+
+
   runManager->SetUserInitialization(physicsList);
   runManager->SetUserInitialization(new ActionInitialization(detector));
 

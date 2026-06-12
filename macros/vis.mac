@@ -1,1 +1,11 @@
-/control/execute macros/vis_global.mac
+/run/initialize
+
+/vis/open 
+/vis/drawVolume
+
+/tracking/storeTrajectory 1
+/vis/scene/add/trajectories smooth
+
+/vis/scene/endOfEventAction accumulate 100
+
+/run/beamOn 100

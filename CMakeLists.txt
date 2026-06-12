@@ -53,4 +53,4 @@ foreach(_script ${MINIMAL_SCRIPTS})
   )
 endforeach()
 
-install(TARGETS minimal_geant4 DESTINATION bin)
+install(TARGETS minimal_geant4 DESTINATION ${PROJECT_SOURCE_DIR}/bin)

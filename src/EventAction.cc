@@ -16,7 +16,12 @@ EventAction::EventAction(const DetectorConstruction* detector,
     fElectronChannelPlusCount(0),
     fElectronChannelMinusCount(0),
     fPhotonExitPlusCount(0),
-    fPhotonExitMinusCount(0)
+    fPhotonExitMinusCount(0),
+    fGammaInteractionCount(0),
+    fGammaPhotCount(0),
+    fGammaComptCount(0),
+    fGammaRaylCount(0),
+    fGammaConvCount(0)
 {
 }
 
@@ -29,11 +34,17 @@ void EventAction::BeginOfEventAction(const G4Event*)
   fProducedElectronGlobalTimes.clear();
   fElectronChannelTrackIDs.clear();
   fPhotonExitTrackIDs.clear();
+  fGammaMcpEntryKeys.clear();
   fElectronChannelCountsByMcp.clear();
   fElectronChannelPlusCount = 0;
   fElectronChannelMinusCount = 0;
   fPhotonExitPlusCount = 0;
   fPhotonExitMinusCount = 0;
+  fGammaInteractionCount = 0;
+  fGammaPhotCount = 0;
+  fGammaComptCount = 0;
+  fGammaRaylCount = 0;
+  fGammaConvCount = 0;
 }
 
 void EventAction::EndOfEventAction(const G4Event* event)
@@ -58,6 +69,11 @@ void EventAction::EndOfEventAction(const G4Event* event)
     static_cast<G4int>(fPhotonExitTrackIDs.size());
   summary.photonExitPlusCount = fPhotonExitPlusCount;
   summary.photonExitMinusCount = fPhotonExitMinusCount;
+  summary.gammaInteractionCount = fGammaInteractionCount;
+  summary.gammaPhotCount = fGammaPhotCount;
+  summary.gammaComptCount = fGammaComptCount;
+  summary.gammaRaylCount = fGammaRaylCount;
+  summary.gammaConvCount = fGammaConvCount;
 
   RootOutput::Instance()->FillEventSummary(summary);
 
@@ -99,6 +115,8 @@ void EventAction::EndOfEventAction(const G4Event* event)
          << summary.photonExitCount
          << " photon exits (+z=" << summary.photonExitPlusCount
          << ", -z=" << summary.photonExitMinusCount << ")"
+         << " and " << summary.gammaInteractionCount
+         << " gamma interactions"
          << " | coincidence="
          << (summary.isCoincidence ? "yes" : "no")
          << "." << G4endl;
@@ -159,5 +177,42 @@ G4bool EventAction::SavePhotonExit(const PhotonExitInfo& exitInfo)
   }
 
   RootOutput::Instance()->FillPhotonExit(exitInfo);
+  return true;
+}
+
+void EventAction::SaveGammaInteraction(
+  const GammaInteractionInfo& info)
+{
+  ++fGammaInteractionCount;
+
+  if (info.processName == "phot") {
+    ++fGammaPhotCount;
+  } else if (info.processName == "compt") {
+    ++fGammaComptCount;
+  } else if (info.processName == "Rayl") {
+    ++fGammaRaylCount;
+  } else if (info.processName == "conv") {
+    ++fGammaConvCount;
+  }
+
+  RootOutput::Instance()->FillGammaInteraction(info);
+}
+
+G4bool EventAction::SaveGammaMcpEntry(
+  const GammaMcpEntryInfo& entry)
+{
+  const std::tuple<G4int, G4int, G4int> key(
+    entry.trackID,
+    entry.side,
+    entry.mcpIndex);
+  const std::pair<
+    std::set<std::tuple<G4int, G4int, G4int> >::iterator,
+    bool> inserted = fGammaMcpEntryKeys.insert(key);
+
+  if (!inserted.second) {
+    return false;
+  }
+
+  RootOutput::Instance()->FillGammaMcpEntry(entry);
   return true;
 }

@@ -35,6 +35,8 @@ RootOutput::RootOutput()
   : fFile(nullptr),
     fElectronChannelHitTree(nullptr),
     fPhotonExitTree(nullptr),
+    fGammaInteractionTree(nullptr),
+    fGammaMcpEntryTree(nullptr),
     fEventSummaryTree(nullptr),
     fMcpPlateStatsTree(nullptr),
     fElectronEventID(0),
@@ -62,6 +64,26 @@ RootOutput::RootOutput()
     fPhotonDirX(0.0),
     fPhotonDirY(0.0),
     fPhotonDirZ(0.0),
+    fGammaEventID(0),
+    fGammaTrackID(0),
+    fGammaParentID(0),
+    fGammaSide(0),
+    fGammaMcpIndex(-1),
+    fGammaKineticEnergy(0.0),
+    fGammaGlobalTime(0.0),
+    fGammaX(0.0),
+    fGammaY(0.0),
+    fGammaZ(0.0),
+    fGammaEntryEventID(0),
+    fGammaEntryTrackID(0),
+    fGammaEntryParentID(0),
+    fGammaEntrySide(0),
+    fGammaEntryMcpIndex(-1),
+    fGammaEntryKineticEnergy(0.0),
+    fGammaEntryGlobalTime(0.0),
+    fGammaEntryX(0.0),
+    fGammaEntryY(0.0),
+    fGammaEntryZ(0.0),
     fSummaryEventID(0),
     fSummaryElectronProducedCount(0),
     fSummaryElectronChannelCount(0),
@@ -73,6 +95,11 @@ RootOutput::RootOutput()
     fSummaryPhotonExitCount(0),
     fSummaryPhotonExitPlusCount(0),
     fSummaryPhotonExitMinusCount(0),
+    fSummaryGammaInteractionCount(0),
+    fSummaryGammaPhotCount(0),
+    fSummaryGammaComptCount(0),
+    fSummaryGammaRaylCount(0),
+    fSummaryGammaConvCount(0),
     fPlateEventID(0),
     fPlateSide(0),
     fPlateMcpIndex(0),
@@ -82,6 +109,9 @@ RootOutput::RootOutput()
   fElectronCreatorProcessName[0] = '\0';
   fPhotonVolumeName[0] = '\0';
   fPhotonStepProcessName[0] = '\0';
+  fGammaProcessName[0] = '\0';
+  fGammaVolumeName[0] = '\0';
+  fGammaEntryVolumeName[0] = '\0';
 }
 
 RootOutput::~RootOutput()
@@ -114,6 +144,12 @@ void RootOutput::Open(const char* fileName)
   fPhotonExitTree =
     new TTree("PhotonExitTree",
               "Gamma photons leaving the MCP");
+  fGammaInteractionTree =
+    new TTree("GammaInteractionTree",
+              "Physical gamma interactions in MCP bodies");
+  fGammaMcpEntryTree =
+    new TTree("GammaMcpEntryTree",
+              "Gamma photons entering MCP bodies");
   fEventSummaryTree =
     new TTree("EventSummaryTree",
               "One minimal row per event");
@@ -189,6 +225,60 @@ void RootOutput::Open(const char* fileName)
     fPhotonStepProcessName,
     "stepProcessName/C");
 
+  fGammaInteractionTree->Branch(
+    "eventID", &fGammaEventID, "eventID/I");
+  fGammaInteractionTree->Branch(
+    "trackID", &fGammaTrackID, "trackID/I");
+  fGammaInteractionTree->Branch(
+    "parentID", &fGammaParentID, "parentID/I");
+  fGammaInteractionTree->Branch(
+    "side", &fGammaSide, "side/I");
+  fGammaInteractionTree->Branch(
+    "mcpIndex", &fGammaMcpIndex, "mcpIndex/I");
+  fGammaInteractionTree->Branch(
+    "processName", fGammaProcessName, "processName/C");
+  fGammaInteractionTree->Branch(
+    "kineticEnergy_keV",
+    &fGammaKineticEnergy,
+    "kineticEnergy_keV/D");
+  fGammaInteractionTree->Branch(
+    "globalTime_ns", &fGammaGlobalTime, "globalTime_ns/D");
+  fGammaInteractionTree->Branch(
+    "x_cm", &fGammaX, "x_cm/D");
+  fGammaInteractionTree->Branch(
+    "y_cm", &fGammaY, "y_cm/D");
+  fGammaInteractionTree->Branch(
+    "z_cm", &fGammaZ, "z_cm/D");
+  fGammaInteractionTree->Branch(
+    "volumeName", fGammaVolumeName, "volumeName/C");
+
+  fGammaMcpEntryTree->Branch(
+    "eventID", &fGammaEntryEventID, "eventID/I");
+  fGammaMcpEntryTree->Branch(
+    "trackID", &fGammaEntryTrackID, "trackID/I");
+  fGammaMcpEntryTree->Branch(
+    "parentID", &fGammaEntryParentID, "parentID/I");
+  fGammaMcpEntryTree->Branch(
+    "side", &fGammaEntrySide, "side/I");
+  fGammaMcpEntryTree->Branch(
+    "mcpIndex", &fGammaEntryMcpIndex, "mcpIndex/I");
+  fGammaMcpEntryTree->Branch(
+    "kineticEnergy_keV",
+    &fGammaEntryKineticEnergy,
+    "kineticEnergy_keV/D");
+  fGammaMcpEntryTree->Branch(
+    "globalTime_ns",
+    &fGammaEntryGlobalTime,
+    "globalTime_ns/D");
+  fGammaMcpEntryTree->Branch(
+    "x_cm", &fGammaEntryX, "x_cm/D");
+  fGammaMcpEntryTree->Branch(
+    "y_cm", &fGammaEntryY, "y_cm/D");
+  fGammaMcpEntryTree->Branch(
+    "z_cm", &fGammaEntryZ, "z_cm/D");
+  fGammaMcpEntryTree->Branch(
+    "volumeName", fGammaEntryVolumeName, "volumeName/C");
+
   fEventSummaryTree->Branch(
     "eventID", &fSummaryEventID, "eventID/I");
   fEventSummaryTree->Branch(
@@ -231,6 +321,26 @@ void RootOutput::Open(const char* fileName)
     "photonExitMinusCount",
     &fSummaryPhotonExitMinusCount,
     "photonExitMinusCount/I");
+  fEventSummaryTree->Branch(
+    "gammaInteractionCount",
+    &fSummaryGammaInteractionCount,
+    "gammaInteractionCount/I");
+  fEventSummaryTree->Branch(
+    "gammaPhotCount",
+    &fSummaryGammaPhotCount,
+    "gammaPhotCount/I");
+  fEventSummaryTree->Branch(
+    "gammaComptCount",
+    &fSummaryGammaComptCount,
+    "gammaComptCount/I");
+  fEventSummaryTree->Branch(
+    "gammaRaylCount",
+    &fSummaryGammaRaylCount,
+    "gammaRaylCount/I");
+  fEventSummaryTree->Branch(
+    "gammaConvCount",
+    &fSummaryGammaConvCount,
+    "gammaConvCount/I");
 
   fMcpPlateStatsTree->Branch(
     "eventID", &fPlateEventID, "eventID/I");
@@ -306,6 +416,59 @@ void RootOutput::FillPhotonExit(const PhotonExitInfo& exitInfo)
   fPhotonExitTree->Fill();
 }
 
+void RootOutput::FillGammaInteraction(
+  const GammaInteractionInfo& info)
+{
+  if (!fGammaInteractionTree) {
+    return;
+  }
+
+  fGammaEventID = info.eventID;
+  fGammaTrackID = info.trackID;
+  fGammaParentID = info.parentID;
+  fGammaSide = info.side;
+  fGammaMcpIndex = info.mcpIndex;
+  fGammaKineticEnergy = info.kineticEnergy/keV;
+  fGammaGlobalTime = info.globalTime/ns;
+  fGammaX = info.position.x()/cm;
+  fGammaY = info.position.y()/cm;
+  fGammaZ = info.position.z()/cm;
+
+  CopyText(fGammaProcessName,
+           sizeof(fGammaProcessName),
+           info.processName);
+  CopyText(fGammaVolumeName,
+           sizeof(fGammaVolumeName),
+           info.volumeName);
+
+  fGammaInteractionTree->Fill();
+}
+
+void RootOutput::FillGammaMcpEntry(
+  const GammaMcpEntryInfo& entry)
+{
+  if (!fGammaMcpEntryTree) {
+    return;
+  }
+
+  fGammaEntryEventID = entry.eventID;
+  fGammaEntryTrackID = entry.trackID;
+  fGammaEntryParentID = entry.parentID;
+  fGammaEntrySide = entry.side;
+  fGammaEntryMcpIndex = entry.mcpIndex;
+  fGammaEntryKineticEnergy = entry.kineticEnergy/keV;
+  fGammaEntryGlobalTime = entry.globalTime/ns;
+  fGammaEntryX = entry.position.x()/cm;
+  fGammaEntryY = entry.position.y()/cm;
+  fGammaEntryZ = entry.position.z()/cm;
+
+  CopyText(fGammaEntryVolumeName,
+           sizeof(fGammaEntryVolumeName),
+           entry.volumeName);
+
+  fGammaMcpEntryTree->Fill();
+}
+
 void RootOutput::FillEventSummary(const EventSummaryInfo& summary)
 {
   if (!fEventSummaryTree) {
@@ -327,6 +490,11 @@ void RootOutput::FillEventSummary(const EventSummaryInfo& summary)
   fSummaryPhotonExitCount = summary.photonExitCount;
   fSummaryPhotonExitPlusCount = summary.photonExitPlusCount;
   fSummaryPhotonExitMinusCount = summary.photonExitMinusCount;
+  fSummaryGammaInteractionCount = summary.gammaInteractionCount;
+  fSummaryGammaPhotCount = summary.gammaPhotCount;
+  fSummaryGammaComptCount = summary.gammaComptCount;
+  fSummaryGammaRaylCount = summary.gammaRaylCount;
+  fSummaryGammaConvCount = summary.gammaConvCount;
   fEventSummaryTree->Fill();
 }
 
@@ -348,6 +516,8 @@ void RootOutput::Close()
   if (!fFile) {
     fElectronChannelHitTree = nullptr;
     fPhotonExitTree = nullptr;
+    fGammaInteractionTree = nullptr;
+    fGammaMcpEntryTree = nullptr;
     fEventSummaryTree = nullptr;
     fMcpPlateStatsTree = nullptr;
     return;
@@ -356,6 +526,8 @@ void RootOutput::Close()
   fFile->cd();
   fElectronChannelHitTree->Write();
   fPhotonExitTree->Write();
+  fGammaInteractionTree->Write();
+  fGammaMcpEntryTree->Write();
   fEventSummaryTree->Write();
   fMcpPlateStatsTree->Write();
   fFile->Close();
@@ -364,6 +536,8 @@ void RootOutput::Close()
   fFile = nullptr;
   fElectronChannelHitTree = nullptr;
   fPhotonExitTree = nullptr;
+  fGammaInteractionTree = nullptr;
+  fGammaMcpEntryTree = nullptr;
   fEventSummaryTree = nullptr;
   fMcpPlateStatsTree = nullptr;
 

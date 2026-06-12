@@ -17,6 +17,11 @@ struct EventSummaryInfo
   G4int photonExitCount;
   G4int photonExitPlusCount;
   G4int photonExitMinusCount;
+  G4int gammaInteractionCount;
+  G4int gammaPhotCount;
+  G4int gammaComptCount;
+  G4int gammaRaylCount;
+  G4int gammaConvCount;
 };
 
 #endif

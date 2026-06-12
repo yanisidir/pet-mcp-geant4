@@ -8,6 +8,7 @@
 #include <vector>
 
 class G4LogicalVolume;
+class G4GenericMessenger;
 class G4Material;
 class G4VPhysicalVolume;
 
@@ -64,8 +65,17 @@ public:
                         G4int& side,
                         G4int& mcpIndex) const;
 
+  // Retourne le côté et l'index d'un corps MCP.
+  // Retourne false si le volume logique n'est pas un MCP_body.
+  G4bool GetMcpInfo(const G4LogicalVolume* logicalVolume,
+                    G4int& side,
+                    G4int& mcpIndex) const;
+
   // Nombre de plaques dans chaque pile MCP.
   G4int GetNumberOfMCPs() const;
+
+  // Sélectionne le matériau MCP depuis le code ou une macro Geant4.
+  void SetDetectorMaterial(const G4String& materialName);
 
   // Indique si le volume logique appartient au dernier MCP
   // de l'une des deux piles.
@@ -134,6 +144,12 @@ private:
   // Volume logique du monde.
   G4LogicalVolume* fWorldLogicalVolume;
 
+  // Tous les corps MCP construits. Cette liste permet de changer leur
+  // matériau après l'initialisation sans reconstruire la géométrie.
+  std::vector<G4LogicalVolume*> fDetectorLogicalVolumes;
+  std::vector<G4int> fDetectorSides;
+  std::vector<G4int> fDetectorMcpIndices;
+
   // Volumes logiques des canaux et côté correspondant.
   std::vector<G4LogicalVolume*> fChannelLogicalVolumes;
   std::vector<G4int> fChannelSides;
@@ -155,13 +171,17 @@ private:
 
   // Matériau du corps du MCP.
   //
-  // Actuellement : G4_GLASS_LEAD.
+  // Verre plombé custom Pb-SiO2.
   G4Material* fDetectorMaterial;
+  G4String fDetectorMaterialName;
 
   // Matériau des canaux.
   //
   // Actuellement : G4_Galactic
   G4Material* fChannelMaterial;
+
+  // Commandes UI du détecteur, notamment /mcp/setMaterial.
+  G4GenericMessenger* fMessenger;
 };
 
 #endif

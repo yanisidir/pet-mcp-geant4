@@ -20,8 +20,7 @@ public:
 
   // Fonction appelée automatiquement à chaque événement.
   //
-  // Elle génère deux photons gamma de même énergie,
-  // au même point, dans les directions +z et -z.
+  // Elle génère un photon gamma dirigé selon +z.
   virtual void GeneratePrimaries(G4Event* event);
 
 private:
@@ -29,8 +28,7 @@ private:
   // OUTILS DE GENERATION
   // =====================================================
 
-  // Générateur utilisé deux fois par événement pour créer
-  // les deux photons de l'annihilation simplifiée.
+  // Générateur du photon primaire.
   G4ParticleGun* fParticleGun;
 
   // Messenger permettant de modifier les paramètres
@@ -41,10 +39,10 @@ private:
   // PARAMETRES DE LA SOURCE
   // =====================================================
 
-  // Energie de chacun des deux photons.
+  // Energie du photon.
   G4double fEnergy;
 
-  // Vertex commun aux deux photons.
+  // Position initiale du photon.
   G4ThreeVector fPosition;
 };
 

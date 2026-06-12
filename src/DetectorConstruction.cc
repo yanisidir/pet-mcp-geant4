@@ -1,12 +1,15 @@
 #include "DetectorConstruction.hh"
 
 #include "G4Box.hh"
+#include "G4Element.hh"
 #include "G4FieldBuilder.hh"
+#include "G4GenericMessenger.hh"
 #include "G4LogicalVolume.hh"
 #include "G4Material.hh"
 #include "G4NistManager.hh"
 #include "G4PVParameterised.hh"
 #include "G4PVPlacement.hh"
+#include "G4RunManager.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4Tubs.hh"
 #include "G4UniformElectricField.hh"
@@ -20,12 +23,12 @@
 namespace
 {
   // MCP geometry
-  const G4int kNumberOfMCPs = 3;
+  const G4int kNumberOfMCPs = 1;
   const G4double kMcpLength = 3000.0*micrometer;
-  const G4double kMcpDiameter = 50000.0*micrometer;
+  const G4double kMcpDiameter = 5000.0*micrometer;
   const G4double kMcpRadius = 0.5*kMcpDiameter;
-  const G4double kMcpGap = 50.0*micrometer;
-  const G4double kFirstMcpZ = 20.0*cm;
+  const G4double kMcpGap = 1000.0*micrometer;
+  const G4double kFirstMcpZ = 1.0*cm;
 
   // MCP voltage / field
   const G4double kMcpVoltage = 3.0*kilovolt;
@@ -33,8 +36,9 @@ namespace
 
   // Channel geometry
   const G4double kChannelDiameter = 25.0*micrometer;
-  const G4double kChannelPitch = 31.0*micrometer;
+  const G4double kChannelPitch = 310.0*micrometer;
   const G4double kChannelAngle = 8.0*deg;
+
 }
 
 // namespace
@@ -73,13 +77,33 @@ DetectorConstruction::DetectorConstruction()
     fWorldLogicalVolume(nullptr),
     fWorldMaterial(nullptr),
     fDetectorMaterial(nullptr),
-    fChannelMaterial(nullptr)
+    fDetectorMaterialName("GlassLead25Perc"),
+    fChannelMaterial(nullptr),
+    fMessenger(nullptr)
 {
   G4FieldBuilder::Instance();
+
+  fMessenger = new G4GenericMessenger(
+    this,
+    "/mcp/",
+    "MCP detector controls");
+
+  G4GenericMessenger::Command& materialCommand =
+    fMessenger->DeclareMethod(
+      "setMaterial",
+      &DetectorConstruction::SetDetectorMaterial,
+      "Select the material used by all MCP bodies.");
+  materialCommand.SetParameterName("materialName", false);
+
+  materialCommand.SetCandidates(
+    "GlassLead25Perc GlassLead30Perc GlassLead35Perc "
+    "GlassLead40Perc GlassLead45Perc GlassLead50Perc "
+    "GlassLead60Perc GlassLead75Perc");
 }
 
 DetectorConstruction::~DetectorConstruction()
 {
+  delete fMessenger;
 }
 
 G4VPhysicalVolume* DetectorConstruction::Construct()
@@ -89,6 +113,9 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   fChannelLogicalVolumes.clear();
   fChannelSides.clear();
   fChannelMcpIndices.clear();
+  fDetectorLogicalVolumes.clear();
+  fDetectorSides.clear();
+  fDetectorMcpIndices.clear();
   fLastMcpLogicalVolumes.clear();
   fLastChannelLogicalVolumes.clear();
   fLastMcpSides.clear();
@@ -96,7 +123,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
   G4VPhysicalVolume* worldPhysical = BuildWorld();
 
   BuildMcpStack(1);
-  BuildMcpStack(-1);
+  // BuildMcpStack(-1);
 
   return worldPhysical;
 }
@@ -141,6 +168,73 @@ G4bool DetectorConstruction::GetChannelInfo(
 G4int DetectorConstruction::GetNumberOfMCPs() const
 {
   return kNumberOfMCPs;
+}
+
+G4bool DetectorConstruction::GetMcpInfo(
+  const G4LogicalVolume* logicalVolume,
+  G4int& side,
+  G4int& mcpIndex) const
+{
+  side = 0;
+  mcpIndex = -1;
+  if (!logicalVolume) {
+    return false;
+  }
+
+  for (std::size_t i = 0; i < fDetectorLogicalVolumes.size(); ++i) {
+    if (fDetectorLogicalVolumes[i] == logicalVolume) {
+      side = fDetectorSides[i];
+      mcpIndex = fDetectorMcpIndices[i];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void DetectorConstruction::SetDetectorMaterial(
+  const G4String& materialName)
+{
+  fDetectorMaterialName = materialName;
+
+  G4Material* material =
+    G4Material::GetMaterial(materialName, false);
+  if (!material) {
+    // Permet d'utiliser /mcp/setMaterial avant /run/initialize.
+    DefineMaterials();
+    material = G4Material::GetMaterial(materialName, false);
+  }
+
+  if (!material) {
+    G4ExceptionDescription message;
+    message << "Unknown MCP material: " << materialName;
+    G4Exception("DetectorConstruction::SetDetectorMaterial",
+                "DetectorMaterial002",
+                FatalException,
+                message);
+    return;
+  }
+
+  fDetectorMaterial = material;
+  for (std::size_t i = 0;
+       i < fDetectorLogicalVolumes.size();
+       ++i) {
+    fDetectorLogicalVolumes[i]->SetMaterial(fDetectorMaterial);
+  }
+
+  G4RunManager* runManager = G4RunManager::GetRunManager();
+  if (runManager) {
+    runManager->PhysicsHasBeenModified();
+  }
+
+  G4cout << "MCP material selected: "
+         << fDetectorMaterial->GetName()
+         << " | density="
+         << fDetectorMaterial->GetDensity()/(g/cm3)
+         << " g/cm3"
+         << " | updated volumes="
+         << fDetectorLogicalVolumes.size()
+         << G4endl;
 }
 
 G4bool DetectorConstruction::IsLastMcpLogicalVolume(
@@ -196,18 +290,125 @@ void DetectorConstruction::ConstructSDandField()
   }
 }
 
+
 void DetectorConstruction::DefineMaterials()
 {
   G4NistManager* nist = G4NistManager::Instance();
 
-  fWorldMaterial = nist->FindOrBuildMaterial("G4_AIR");
-  fDetectorMaterial = nist->FindOrBuildMaterial("G4_GLASS_LEAD");
+  G4Element* lead = nist->FindOrBuildElement("Pb");
+  G4Element* silicon = nist->FindOrBuildElement("Si");
+  G4Element* oxygen = nist->FindOrBuildElement("O");
+
+  // Densities are approximate real lead-glass values.
+  // Intermediate values are linearly interpolated.
+
+  if (!G4Material::GetMaterial("GlassLead25Perc", false)) {
+    G4Material* glassLead25 =
+      new G4Material("GlassLead25Perc", 3.32*g/cm3, 3);
+    glassLead25->AddElement(lead, 0.25);
+    glassLead25->AddElement(silicon, 0.30);
+    glassLead25->AddElement(oxygen, 0.45);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead30Perc", false)) {
+    G4Material* glassLead30 =
+      new G4Material("GlassLead30Perc", 3.51*g/cm3, 3);
+    glassLead30->AddElement(lead, 0.30);
+    glassLead30->AddElement(silicon, 0.28);
+    glassLead30->AddElement(oxygen, 0.42);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead35Perc", false)) {
+    G4Material* glassLead35 =
+      new G4Material("GlassLead35Perc", 3.70*g/cm3, 3);
+    glassLead35->AddElement(lead, 0.35);
+    glassLead35->AddElement(silicon, 0.26);
+    glassLead35->AddElement(oxygen, 0.39);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead40Perc", false)) {
+    G4Material* glassLead40 =
+      new G4Material("GlassLead40Perc", 3.89*g/cm3, 3);
+    glassLead40->AddElement(lead, 0.40);
+    glassLead40->AddElement(silicon, 0.24);
+    glassLead40->AddElement(oxygen, 0.36);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead45Perc", false)) {
+    G4Material* glassLead45 =
+      new G4Material("GlassLead45Perc", 4.08*g/cm3, 3);
+    glassLead45->AddElement(lead, 0.45);
+    glassLead45->AddElement(silicon, 0.22);
+    glassLead45->AddElement(oxygen, 0.33);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead50Perc", false)) {
+    G4Material* glassLead50 =
+      new G4Material("GlassLead50Perc", 4.36*g/cm3, 3);
+    glassLead50->AddElement(lead, 0.50);
+    glassLead50->AddElement(silicon, 0.20);
+    glassLead50->AddElement(oxygen, 0.30);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead60Perc", false)) {
+    G4Material* glassLead60 =
+      new G4Material("GlassLead60Perc", 4.93*g/cm3, 3);
+    glassLead60->AddElement(lead, 0.60);
+    glassLead60->AddElement(silicon, 0.16);
+    glassLead60->AddElement(oxygen, 0.24);
+  }
+
+  if (!G4Material::GetMaterial("GlassLead75Perc", false)) {
+    G4Material* glassLead75 =
+      new G4Material("GlassLead75Perc", 6.22*g/cm3, 3);
+    glassLead75->AddElement(lead, 0.75);
+    glassLead75->AddElement(silicon, 0.10);
+    glassLead75->AddElement(oxygen, 0.15);
+  }
+
+  fWorldMaterial = nist->FindOrBuildMaterial("G4_Galactic");
   fChannelMaterial = nist->FindOrBuildMaterial("G4_Galactic");
+
+  fDetectorMaterial =
+    G4Material::GetMaterial(fDetectorMaterialName, false);
+
+  if (!fDetectorMaterial) {
+    G4ExceptionDescription message;
+    message << "Unknown MCP material: " << fDetectorMaterialName
+            << ". Available choices are GlassLead25Perc, "
+            << "GlassLead30Perc, GlassLead35Perc, "
+            << "GlassLead40Perc, GlassLead45Perc, "
+            << "GlassLead50Perc, GlassLead60Perc and GlassLead75Perc.";
+    G4Exception("DetectorConstruction::DefineMaterials",
+                "DetectorMaterial001",
+                FatalException,
+                message);
+    return;
+  }
+
+  const G4ElementVector* elements =
+    fDetectorMaterial->GetElementVector();
+  const G4double* fractions =
+    fDetectorMaterial->GetFractionVector();
+
+  G4cout << "MCP material: " << fDetectorMaterial->GetName()
+         << " | density="
+         << fDetectorMaterial->GetDensity()/(g/cm3)
+         << " g/cm3 | mass fractions:";
+
+  for (std::size_t i = 0;
+       i < fDetectorMaterial->GetNumberOfElements();
+       ++i) {
+    G4cout << " " << (*elements)[i]->GetSymbol()
+           << "=" << fractions[i];
+  }
+
+  G4cout << G4endl;
 }
 
 G4VPhysicalVolume* DetectorConstruction::BuildWorld()
 {
-  const G4double worldSize = 1.0*m;
+  const G4double worldSize = 10*cm;
 
   G4Box* worldSolid = new G4Box("WorldSolid",
                                 0.5*worldSize,
@@ -273,6 +474,9 @@ void DetectorConstruction::BuildMCP(
 
   G4LogicalVolume* mcpLogical =
     new G4LogicalVolume(mcpSolid, fDetectorMaterial, logicalName);
+  fDetectorLogicalVolumes.push_back(mcpLogical);
+  fDetectorSides.push_back(side);
+  fDetectorMcpIndices.push_back(mcpIndex);
 
   const G4ThreeVector mcpPosition(0.0, 0.0, positionZ);
   const G4int copyNumber =

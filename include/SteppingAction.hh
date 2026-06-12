@@ -2,6 +2,8 @@
 #define STEPPING_ACTION_HH
 
 #include "ElectronChannelHitInfo.hh"
+#include "GammaInteractionInfo.hh"
+#include "GammaMcpEntryInfo.hh"
 #include "PhotonExitInfo.hh"
 
 #include "G4UserSteppingAction.hh"
@@ -25,6 +27,9 @@ private:
   G4bool GetChannelInfo(const G4VPhysicalVolume* volume,
                         G4int& side,
                         G4int& mcpIndex) const;
+  G4bool GetMcpInfo(const G4VPhysicalVolume* volume,
+                    G4int& side,
+                    G4int& mcpIndex) const;
   G4int GetLastMcpSide(const G4VPhysicalVolume* volume) const;
 
   ElectronChannelHitInfo BuildElectronChannelHit(
@@ -34,6 +39,17 @@ private:
 
   PhotonExitInfo BuildPhotonExit(const G4Step* step,
                                  G4int side) const;
+
+  GammaInteractionInfo BuildGammaInteraction(
+    const G4Step* step,
+    G4int side,
+    G4int mcpIndex,
+    const G4String& processName) const;
+
+  GammaMcpEntryInfo BuildGammaMcpEntry(
+    const G4Step* step,
+    G4int side,
+    G4int mcpIndex) const;
 
   const DetectorConstruction* fDetector;
   EventAction* fEventAction;

@@ -3,8 +3,9 @@
 /event/verbose 0
 /tracking/verbose 0
 
+/mcp/setMaterial GlassLead25Perc
 /run/initialize
 
 /minimal/gun/energy 511 keV
 /minimal/gun/position 0 0 0 cm
-/run/beamOn 10000
+/run/beamOn 100000

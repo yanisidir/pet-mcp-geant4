@@ -37,8 +37,7 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
   const G4StepPoint* preStepPoint = step->GetPreStepPoint();
   const G4StepPoint* postStepPoint = step->GetPostStepPoint();
 
-  if (!track || !preStepPoint || !postStepPoint ||
-      postStepPoint->GetStepStatus() != fGeomBoundary) {
+  if (!track || !preStepPoint || !postStepPoint) {
     return;
   }
 
@@ -54,6 +53,52 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     postStepPoint->GetPhysicalVolume();
 
   const G4String particleName = particle->GetParticleName();
+
+  // Une interaction gamma peut avoir lieu au milieu d'un volume.
+  if (particleName == "gamma") {
+    const G4VProcess* process =
+      postStepPoint->GetProcessDefinedStep();
+    if (process) {
+      const G4String processName = process->GetProcessName();
+      const G4bool isPhysicalGammaInteraction =
+        processName == "phot" ||
+        processName == "compt" ||
+        processName == "Rayl" ||
+        processName == "conv";
+
+      G4int mcpSide = 0;
+      G4int mcpIndex = -1;
+      if (isPhysicalGammaInteraction &&
+          GetMcpInfo(preVolume, mcpSide, mcpIndex)) {
+        fEventAction->SaveGammaInteraction(
+          BuildGammaInteraction(step,
+                                mcpSide,
+                                mcpIndex,
+                                processName));
+      }
+    }
+  }
+
+  if (postStepPoint->GetStepStatus() != fGeomBoundary) {
+    return;
+  }
+
+  G4int enteredMcpSide = 0;
+  G4int enteredMcpIndex = -1;
+  const G4bool entersMcpBody =
+    particleName == "gamma" &&
+    GetMcpInfo(postVolume, enteredMcpSide, enteredMcpIndex) &&
+    (!preVolume ||
+     preVolume->GetLogicalVolume() !=
+       postVolume->GetLogicalVolume());
+
+  if (entersMcpBody) {
+    fEventAction->SaveGammaMcpEntry(
+      BuildGammaMcpEntry(step,
+                         enteredMcpSide,
+                         enteredMcpIndex));
+  }
+
   G4int channelSide = 0;
   G4int channelMcpIndex = -1;
   const G4bool entersChannel =
@@ -81,6 +126,22 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
       BuildPhotonExit(step, lastMcpSide));
     track->SetTrackStatus(fStopAndKill);
   }
+}
+
+G4bool SteppingAction::GetMcpInfo(
+  const G4VPhysicalVolume* volume,
+  G4int& side,
+  G4int& mcpIndex) const
+{
+  if (!fDetector || !volume) {
+    side = 0;
+    mcpIndex = -1;
+    return false;
+  }
+
+  return fDetector->GetMcpInfo(volume->GetLogicalVolume(),
+                               side,
+                               mcpIndex);
 }
 
 // Identifie le côté et la plaque MCP contenant le canal.
@@ -181,4 +242,63 @@ PhotonExitInfo SteppingAction::BuildPhotonExit(
     stepProcess ? stepProcess->GetProcessName() : "unknown";
 
   return exitInfo;
+}
+
+GammaInteractionInfo SteppingAction::BuildGammaInteraction(
+  const G4Step* step,
+  G4int side,
+  G4int mcpIndex,
+  const G4String& processName) const
+{
+  GammaInteractionInfo info;
+  const G4Track* track = step->GetTrack();
+  const G4StepPoint* preStepPoint = step->GetPreStepPoint();
+  const G4StepPoint* postStepPoint = step->GetPostStepPoint();
+  const G4Event* event =
+    G4EventManager::GetEventManager()->GetConstCurrentEvent();
+
+  info.eventID = event ? event->GetEventID() : -1;
+  info.trackID = track->GetTrackID();
+  info.parentID = track->GetParentID();
+  info.side = side;
+  info.mcpIndex = mcpIndex;
+  info.processName = processName;
+
+  // Energie incidente juste avant que le processus physique soit appliqué.
+  info.kineticEnergy = preStepPoint->GetKineticEnergy();
+  info.globalTime = postStepPoint->GetGlobalTime();
+  info.position = postStepPoint->GetPosition();
+
+  const G4VPhysicalVolume* volume =
+    preStepPoint->GetPhysicalVolume();
+  info.volumeName = volume ? volume->GetName() : "unknown";
+
+  return info;
+}
+
+GammaMcpEntryInfo SteppingAction::BuildGammaMcpEntry(
+  const G4Step* step,
+  G4int side,
+  G4int mcpIndex) const
+{
+  GammaMcpEntryInfo entry;
+  const G4Track* track = step->GetTrack();
+  const G4StepPoint* postStepPoint = step->GetPostStepPoint();
+  const G4Event* event =
+    G4EventManager::GetEventManager()->GetConstCurrentEvent();
+
+  entry.eventID = event ? event->GetEventID() : -1;
+  entry.trackID = track->GetTrackID();
+  entry.parentID = track->GetParentID();
+  entry.side = side;
+  entry.mcpIndex = mcpIndex;
+  entry.kineticEnergy = postStepPoint->GetKineticEnergy();
+  entry.globalTime = postStepPoint->GetGlobalTime();
+  entry.position = postStepPoint->GetPosition();
+
+  const G4VPhysicalVolume* volume =
+    postStepPoint->GetPhysicalVolume();
+  entry.volumeName = volume ? volume->GetName() : "unknown";
+
+  return entry;
 }
