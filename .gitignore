@@ -1,5 +1,6 @@
 # CMake build directories and generated files
 /build/
+bin/
 /cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
@@ -10,6 +11,10 @@ compile_commands.json
 # Simulation and analysis outputs
 *.root
 *.pdf
+*.so
+*.dylib
+*.o
+*.png
 *.eps
 *.ps
 *.svg
