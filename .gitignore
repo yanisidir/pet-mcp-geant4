@@ -1,29 +1,42 @@
-# CMake build directories and generated files
-/build/
+# Build directories and CMake-generated files
+build/
 bin/
-/cmake-build-*/
-CMakeCache.txt
+cmake-build-*/
 CMakeFiles/
+CMakeCache.txt
 cmake_install.cmake
 Makefile
 compile_commands.json
 
-# Simulation and analysis outputs
-*.root
-*.pdf
+# Compiled objects and libraries
+*.o
 *.so
 *.dylib
-*.o
+
+# ROOT-generated files and simulation outputs
+*.root
+*.pcm
+*.d
+*.dict.*
+root_output/
+
+# Generated figures
 *.png
+*.pdf
 *.eps
 *.ps
 *.svg
-/mcp_plate_coincidence_matrix.png
-/coincidence_electron_multiplicity.png
-/coincidence_plus_vs_minus.png
-/coincidence_plus_vs_minus_percent.png
-/simple_coincidence_plate_matrix_counts*.png
-/simple_coincidence_plate_matrix_percent*.png
+Fig/current/
+Fig/tmp/
+Fig/test/
+
+# Logs
+*.log
+nohup.out
+
+# Python cache
+__pycache__/
+*.pyc
 
 # Editor and operating-system files
 .vscode/
@@ -31,7 +44,3 @@ compile_commands.json
 *~
 *.swp
 .DS_Store
-
-# Python cache
-__pycache__/
-*.py[cod]
