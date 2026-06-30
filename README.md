@@ -25,8 +25,10 @@ event-level coincidence statistics.
 ## Build
 
 ```bash
-cmake -S . -B build
-cmake --build build -j
+mkdir -p build
+cd build
+cmake ..
+make -j
 ```
 
 ## Run
@@ -36,18 +38,29 @@ cd build
 ./minimal_geant4 macros/run.mac
 ```
 
-In multithreaded mode, ROOT files are written per worker thread:
+When the simulation is launched from `build/`, the ROOT output is written as:
 
 ```text
-mcp_output_t0.root
-mcp_output_t1.root
-...
+build/mcp_output.root
 ```
+
+In the current serial configuration, the normal output file is
+`mcp_output.root`. In multithreaded configurations, if enabled, ROOT files may
+be written per worker thread, for example `mcp_output_t0.root`,
+`mcp_output_t1.root`, etc.
 
 ## Visualization
 
 ```bash
 cd build
+./minimal_geant4 macros/vis_current.mac
+```
+
+Some `vis_*` macros are kept for historical views of older multi-MCP
+geometries. If a macro references volumes such as `MCP_plus_body_1` while the
+current code uses `kNumberOfMCPs = 1`, prefer `vis_current.mac`.
+
+```bash
 ./minimal_geant4 macros/vis_global.mac
 ./minimal_geant4 macros/vis_plus_z.mac
 ./minimal_geant4 macros/vis_minus_z.mac
@@ -60,8 +73,20 @@ cd build
 From the project directory:
 
 ```bash
-root -l -b -q 'inspect_electrons.C("build/mcp_output_t0.root")'
+cd /path/to/pet-mcp-geant4
+root -l -b -q 'script/inspect_electrons.C("build/mcp_output.root")'
 ```
+
+Most analysis macros default to reading `build/mcp_output.root`, so launch them
+from the project root unless you pass an explicit ROOT filename.
+
+Figures produced by ROOT analysis macros are written to:
+
+```text
+Fig/current/
+```
+
+Older figures are archived in `Fig/old_*` directories.
 
 Generated build files, ROOT outputs, and visualization exports are excluded
 from Git.

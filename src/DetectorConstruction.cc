@@ -1,9 +1,10 @@
 #include "DetectorConstruction.hh"
 
+#include "DetectorMessenger.hh"
+#include "ElectricFieldSetup.hh"
 #include "G4Box.hh"
+#include "G4Colour.hh"
 #include "G4Element.hh"
-#include "G4FieldBuilder.hh"
-#include "G4GenericMessenger.hh"
 #include "G4LogicalVolume.hh"
 #include "G4Material.hh"
 #include "G4NistManager.hh"
@@ -12,7 +13,6 @@
 #include "G4RunManager.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4Tubs.hh"
-#include "G4UniformElectricField.hh"
 #include "G4VisAttributes.hh"
 #include "HoleParameterisation.hh"
 
@@ -25,18 +25,14 @@ namespace
   // MCP geometry
   const G4int kNumberOfMCPs = 1;
   const G4double kMcpLength = 3000.0*micrometer;
-  const G4double kMcpDiameter = 5000.0*micrometer;
+  const G4double kMcpDiameter = 50000.0*micrometer;
   const G4double kMcpRadius = 0.5*kMcpDiameter;
   const G4double kMcpGap = 1000.0*micrometer;
   const G4double kFirstMcpZ = 1.0*cm;
 
-  // MCP voltage / field
-  const G4double kMcpVoltage = 3.0*kilovolt;
-  const G4bool kEnableElectricField = false;
-
   // Channel geometry
   const G4double kChannelDiameter = 25.0*micrometer;
-  const G4double kChannelPitch = 310.0*micrometer;
+  const G4double kChannelPitch = 31.0*micrometer;
   const G4double kChannelAngle = 8.0*deg;
 
 }
@@ -77,38 +73,34 @@ DetectorConstruction::DetectorConstruction()
     fWorldLogicalVolume(nullptr),
     fWorldMaterial(nullptr),
     fDetectorMaterial(nullptr),
-    fDetectorMaterialName("GlassLead25Perc"),
+    fDetectorMaterialName("GlassLead60Perc"),
     fChannelMaterial(nullptr),
-    fMessenger(nullptr)
+    fMessenger(nullptr),
+    fPlusStackFieldSetup(nullptr),
+    fMinusStackFieldSetup(nullptr),
+    fEnableStackElectricFields(false),
+    fStackFieldMagnitude(1.0*kilovolt/mm),
+    fFieldRegionRadialMargin(1.0*mm),
+    fFieldRegionZMargin(1.0*mm)
 {
-  G4FieldBuilder::Instance();
-
-  fMessenger = new G4GenericMessenger(
-    this,
-    "/mcp/",
-    "MCP detector controls");
-
-  G4GenericMessenger::Command& materialCommand =
-    fMessenger->DeclareMethod(
-      "setMaterial",
-      &DetectorConstruction::SetDetectorMaterial,
-      "Select the material used by all MCP bodies.");
-  materialCommand.SetParameterName("materialName", false);
-
-  materialCommand.SetCandidates(
-    "GlassLead25Perc GlassLead30Perc GlassLead35Perc "
-    "GlassLead40Perc GlassLead45Perc GlassLead50Perc "
-    "GlassLead60Perc GlassLead75Perc");
+  fMessenger = new DetectorMessenger(this);
 }
 
 DetectorConstruction::~DetectorConstruction()
 {
+  delete fPlusStackFieldSetup;
+  delete fMinusStackFieldSetup;
   delete fMessenger;
 }
 
 G4VPhysicalVolume* DetectorConstruction::Construct()
 {
   DefineMaterials();
+
+  delete fPlusStackFieldSetup;
+  delete fMinusStackFieldSetup;
+  fPlusStackFieldSetup = nullptr;
+  fMinusStackFieldSetup = nullptr;
 
   fChannelLogicalVolumes.clear();
   fChannelSides.clear();
@@ -122,8 +114,26 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 
   G4VPhysicalVolume* worldPhysical = BuildWorld();
 
-  BuildMcpStack(1);
-  // BuildMcpStack(-1);
+  G4LogicalVolume* plusMother = fWorldLogicalVolume;
+  G4LogicalVolume* minusMother = fWorldLogicalVolume;
+  G4double plusMotherCenterZ = 0.0;
+  G4double minusMotherCenterZ = 0.0;
+
+  if (fEnableStackElectricFields) {
+    const G4double firstCenter = kFirstMcpZ;
+    const G4double lastCenter = kFirstMcpZ + (kNumberOfMCPs - 1)*(kMcpLength + kMcpGap);
+    const G4double stackMinZ = firstCenter - 0.5*kMcpLength;
+    const G4double stackMaxZ = lastCenter + 0.5*kMcpLength;
+    const G4double fieldCenterDistance = 0.5*(stackMinZ + stackMaxZ);
+
+    plusMother = BuildElectricFieldRegion(1);
+    minusMother = BuildElectricFieldRegion(-1);
+    plusMotherCenterZ = fieldCenterDistance;
+    minusMotherCenterZ = -fieldCenterDistance;
+  }
+
+  BuildMcpStack(1, plusMother, plusMotherCenterZ);
+  BuildMcpStack(-1, minusMother, minusMotherCenterZ);
 
   return worldPhysical;
 }
@@ -237,6 +247,100 @@ void DetectorConstruction::SetDetectorMaterial(
          << G4endl;
 }
 
+void DetectorConstruction::SetStackElectricFieldsEnabled(G4bool enabled)
+{
+  fEnableStackElectricFields = enabled;
+  if (fWorldLogicalVolume) {
+    G4cout << "WARNING: /mcp/enableStackElectricFields changed after "
+           << "geometry construction. Run /run/initialize again or "
+           << "reinitialize geometry before starting a new run."
+           << G4endl;
+    G4RunManager* runManager = G4RunManager::GetRunManager();
+    if (runManager) {
+      runManager->GeometryHasBeenModified();
+    }
+  }
+
+  G4cout << "MCP stack electric fields "
+         << (fEnableStackElectricFields ? "enabled" : "disabled")
+         << "." << G4endl;
+}
+
+void DetectorConstruction::SetStackFieldMagnitude(G4double magnitude)
+{
+  if (magnitude <= 0.0) {
+    G4cout << "WARNING: stack field magnitude must be positive. "
+           << "Keeping previous value." << G4endl;
+    return;
+  }
+
+  fStackFieldMagnitude = magnitude;
+  if (fWorldLogicalVolume) {
+    G4cout << "WARNING: /mcp/stackFieldMagnitude changed after "
+           << "geometry construction. Run /run/initialize again or "
+           << "reinitialize geometry before starting a new run."
+           << G4endl;
+    G4RunManager* runManager = G4RunManager::GetRunManager();
+    if (runManager) {
+      runManager->GeometryHasBeenModified();
+    }
+  }
+
+  G4cout << "MCP stack field magnitude set to "
+         << fStackFieldMagnitude/(kilovolt/mm)
+         << " kV/mm." << G4endl;
+}
+
+void DetectorConstruction::SetFieldRegionRadialMargin(G4double margin)
+{
+  if (margin < 0.0) {
+    G4cout << "WARNING: field region radial margin cannot be negative. "
+           << "Keeping previous value." << G4endl;
+    return;
+  }
+
+  fFieldRegionRadialMargin = margin;
+  if (fWorldLogicalVolume) {
+    G4cout << "WARNING: /mcp/fieldRegionRadialMargin changed after "
+           << "geometry construction. Run /run/initialize again or "
+           << "reinitialize geometry before starting a new run."
+           << G4endl;
+    G4RunManager* runManager = G4RunManager::GetRunManager();
+    if (runManager) {
+      runManager->GeometryHasBeenModified();
+    }
+  }
+
+  G4cout << "MCP field region radial margin set to "
+         << fFieldRegionRadialMargin/mm
+         << " mm." << G4endl;
+}
+
+void DetectorConstruction::SetFieldRegionZMargin(G4double margin)
+{
+  if (margin < 0.0) {
+    G4cout << "WARNING: field region z margin cannot be negative. "
+           << "Keeping previous value." << G4endl;
+    return;
+  }
+
+  fFieldRegionZMargin = margin;
+  if (fWorldLogicalVolume) {
+    G4cout << "WARNING: /mcp/fieldRegionZMargin changed after "
+           << "geometry construction. Run /run/initialize again or "
+           << "reinitialize geometry before starting a new run."
+           << G4endl;
+    G4RunManager* runManager = G4RunManager::GetRunManager();
+    if (runManager) {
+      runManager->GeometryHasBeenModified();
+    }
+  }
+
+  G4cout << "MCP field region z margin set to "
+         << fFieldRegionZMargin/mm
+         << " mm." << G4endl;
+}
+
 G4bool DetectorConstruction::IsLastMcpLogicalVolume(
   const G4LogicalVolume* logicalVolume) const
 {
@@ -262,31 +366,12 @@ G4int DetectorConstruction::GetLastMcpSide( // returns +1 for plus side, -1 for 
 
 void DetectorConstruction::ConstructSDandField()
 {
-  const G4double fieldMagnitude = kMcpVoltage/kMcpLength;
-
-  G4ThreeVector fieldVector(0.0, 0.0, 0.0);
-
-  if (kEnableElectricField) {
-    fieldVector = G4ThreeVector(0.0, 0.0, -fieldMagnitude);
-  }
-
-  G4UniformElectricField* electricField =
-    new G4UniformElectricField(fieldVector);
-
-  G4FieldBuilder* fieldBuilder = G4FieldBuilder::Instance();
-  fieldBuilder->SetGlobalField(electricField);
-  fieldBuilder->SetFieldType(kElectroMagnetic);
-  fieldBuilder->ConstructFieldSetup();
-
-  if (kEnableElectricField) {
-    G4cout << "Uniform electric field: "
-           << fieldMagnitude/(kilovolt/cm)
-           << " kV/cm along -z." << G4endl;
-    G4cout << "Field limitation: this global direction is not symmetric; "
-           << "the -z MCP stack would need an opposite local field."
+  if (fEnableStackElectricFields) {
+    G4cout << "Global electric field disabled. "
+           << "MCP fields are attached locally to stack field regions."
            << G4endl;
   } else {
-    G4cout << "Electric field disabled." << G4endl;
+    G4cout << "MCP stack electric fields disabled." << G4endl;
   }
 }
 
@@ -433,7 +518,82 @@ G4VPhysicalVolume* DetectorConstruction::BuildWorld()
   return worldPhysical;
 }
 
-void DetectorConstruction::BuildMcpStack(G4int side)
+G4LogicalVolume* DetectorConstruction::BuildElectricFieldRegion(G4int side)
+{
+  const G4double firstCenter = kFirstMcpZ;
+  const G4double lastCenter =
+    kFirstMcpZ + (kNumberOfMCPs - 1)*(kMcpLength + kMcpGap);
+  const G4double stackMinZ = firstCenter - 0.5*kMcpLength;
+  const G4double stackMaxZ = lastCenter + 0.5*kMcpLength;
+  const G4double fieldLength =
+    (stackMaxZ - stackMinZ) + 2.0*fFieldRegionZMargin;
+  const G4double fieldCenterDistance = 0.5*(stackMinZ + stackMaxZ);
+  const G4double fieldRadius =
+    kMcpRadius + fFieldRegionRadialMargin;
+
+  const G4String sideName = side > 0 ? "plus" : "minus";
+  const G4String nameBase = "MCP_" + sideName + "_field_region";
+
+  G4Tubs* fieldSolid = new G4Tubs(nameBase + "_solid",
+                                  0.0,
+                                  fieldRadius,
+                                  0.5*fieldLength,
+                                  0.0,
+                                  360.0*deg);
+
+  G4LogicalVolume* fieldLogical =
+    new G4LogicalVolume(fieldSolid,
+                        fChannelMaterial,
+                        nameBase + "_log");
+
+  const G4double fieldCenterZ = side*fieldCenterDistance;
+  new G4PVPlacement(nullptr,
+                    G4ThreeVector(0.0, 0.0, fieldCenterZ),
+                    fieldLogical,
+                    nameBase,
+                    fWorldLogicalVolume,
+                    false,
+                    side > 0 ? 1 : 2, // copy number: 1 for +z side, 2 for -z side
+                    true);
+
+  // The field region is invisible in the visualization.                  
+  fieldLogical->SetVisAttributes(G4VisAttributes::GetInvisible());
+
+  const G4ThreeVector fieldVector =
+    side > 0
+      ? G4ThreeVector(0.0, 0.0, -fStackFieldMagnitude)
+      : G4ThreeVector(0.0, 0.0,  fStackFieldMagnitude);
+
+  ElectricFieldSetup* fieldSetup =
+    new ElectricFieldSetup(fieldVector);
+  fieldLogical->SetFieldManager(fieldSetup->GetFieldManager(), true);
+
+  if (side > 0) {
+    fPlusStackFieldSetup = fieldSetup;
+  } else {
+    fMinusStackFieldSetup = fieldSetup;
+  }
+
+  G4cout << "Local MCP electric field enabled"
+         << " | side=" << (side > 0 ? "+z" : "-z")
+         << " | magnitude=" << fStackFieldMagnitude/(kilovolt/mm)
+         << " kV/mm"
+         << " | direction=("
+         << fieldVector.x()/(kilovolt/mm) << ", "
+         << fieldVector.y()/(kilovolt/mm) << ", "
+         << fieldVector.z()/(kilovolt/mm) << ") kV/mm"
+         << " | radius=" << fieldRadius/mm << " mm"
+         << " | length=" << fieldLength/mm << " mm"
+         << " | z=" << fieldCenterZ/cm << " cm"
+         << G4endl;
+
+  return fieldLogical;
+}
+
+void DetectorConstruction::BuildMcpStack(
+  G4int side,
+  G4LogicalVolume* motherLogicalVolume,
+  G4double motherCenterZ)
 {
   for (G4int mcpIndex = 0; mcpIndex < kNumberOfMCPs; ++mcpIndex) {
     const G4double distanceFromSource =
@@ -444,7 +604,9 @@ void DetectorConstruction::BuildMcpStack(G4int side)
     BuildMCP(side,
              mcpIndex,
              side*distanceFromSource,
-             side*chevronAngle);
+             side*chevronAngle,
+             motherLogicalVolume,
+             motherCenterZ);
   }
 }
 
@@ -452,7 +614,9 @@ void DetectorConstruction::BuildMCP(
   G4int side,
   G4int mcpIndex,
   G4double positionZ,
-  G4double channelAngle)
+  G4double channelAngle,
+  G4LogicalVolume* motherLogicalVolume,
+  G4double motherCenterZ)
 {
   const G4String sideName = side > 0 ? "plus" : "minus";
 
@@ -478,7 +642,10 @@ void DetectorConstruction::BuildMCP(
   fDetectorSides.push_back(side);
   fDetectorMcpIndices.push_back(mcpIndex);
 
-  const G4ThreeVector mcpPosition(0.0, 0.0, positionZ);
+  const G4ThreeVector mcpPosition(
+    0.0,
+    0.0,
+    positionZ - motherCenterZ);
   const G4int copyNumber =
     side > 0 ? mcpIndex : kNumberOfMCPs + mcpIndex;
 
@@ -486,7 +653,7 @@ void DetectorConstruction::BuildMCP(
                     mcpPosition,
                     mcpLogical,
                     physicalName,
-                    fWorldLogicalVolume,
+                    motherLogicalVolume,
                     false,
                     copyNumber,
                     true);

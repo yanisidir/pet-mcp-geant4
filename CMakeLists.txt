@@ -1,56 +1,56 @@
 cmake_minimum_required(VERSION 3.16)
-project(minimal_geant4_example)
 
-option(WITH_GEANT4_UIVIS "Build with Geant4 UI and visualization drivers" ON)
+project(minimal_geant4_example LANGUAGES CXX)
 
-if(WITH_GEANT4_UIVIS)
-  find_package(Geant4 REQUIRED ui_all vis_all)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(Geant4 REQUIRED ui_all vis_all)
+find_package(ROOT QUIET COMPONENTS Core RIO Tree)
+
+if(ROOT_FOUND)
+  set(PROJECT_ROOT_INCLUDE_DIRS ${ROOT_INCLUDE_DIRS})
+  set(PROJECT_ROOT_LIBRARIES ${ROOT_LIBRARIES})
 else()
-  find_package(Geant4 REQUIRED)
+  find_program(ROOT_CONFIG_EXECUTABLE root-config REQUIRED)
+  execute_process(
+    COMMAND ${ROOT_CONFIG_EXECUTABLE} --cflags
+    OUTPUT_VARIABLE ROOT_CONFIG_CFLAGS
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  execute_process(
+    COMMAND ${ROOT_CONFIG_EXECUTABLE} --libs
+    OUTPUT_VARIABLE ROOT_CONFIG_LIBS
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  separate_arguments(PROJECT_ROOT_CFLAGS UNIX_COMMAND
+    "${ROOT_CONFIG_CFLAGS}")
+  separate_arguments(PROJECT_ROOT_LIBRARIES UNIX_COMMAND
+    "${ROOT_CONFIG_LIBS}")
 endif()
-
-execute_process(
-  COMMAND root-config --incdir
-  OUTPUT_VARIABLE ROOT_INCLUDE_DIR
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-execute_process(
-  COMMAND root-config --glibs
-  OUTPUT_VARIABLE ROOT_LIBRARIES
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-separate_arguments(ROOT_LIBRARIES UNIX_COMMAND "${ROOT_LIBRARIES}")
 
 include(${Geant4_USE_FILE})
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
+file(GLOB PROJECT_SOURCES CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/src/*.cc")
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
+add_executable(minimal_geant4
+  minimal_geant4.cc
+  ${PROJECT_SOURCES})
 
-add_executable(minimal_geant4 minimal_geant4.cc ${sources} ${headers})
-target_include_directories(minimal_geant4 PRIVATE ${ROOT_INCLUDE_DIR})
-target_link_libraries(minimal_geant4 ${Geant4_LIBRARIES} ${ROOT_LIBRARIES})
+target_include_directories(minimal_geant4 PRIVATE
+  "${PROJECT_SOURCE_DIR}/include"
+  ${PROJECT_ROOT_INCLUDE_DIRS})
 
-set(MINIMAL_SCRIPTS
-  macros/run.mac
-  macros/vis.mac
-  macros/vis_file.mac
-  macros/vis_global.mac
-  macros/vis_plus_z.mac
-  macros/vis_minus_z.mac
-  macros/vis_face_plus_z.mac
-  macros/vis_export.mac
-  macros/tree.mac
-)
+if(PROJECT_ROOT_CFLAGS)
+  target_compile_options(minimal_geant4 PRIVATE ${PROJECT_ROOT_CFLAGS})
+endif()
 
-foreach(_script ${MINIMAL_SCRIPTS})
-  configure_file(
-    ${PROJECT_SOURCE_DIR}/${_script}
-    ${PROJECT_BINARY_DIR}/${_script}
-    COPYONLY
-  )
-endforeach()
+target_link_libraries(minimal_geant4 PRIVATE
+  ${Geant4_LIBRARIES}
+  ${PROJECT_ROOT_LIBRARIES})
 
-install(TARGETS minimal_geant4 DESTINATION ${PROJECT_SOURCE_DIR}/bin)
+file(GLOB MACRO_FILES CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/macros/*.mac")
+
+file(COPY ${MACRO_FILES}
+  DESTINATION "${PROJECT_BINARY_DIR}/macros")

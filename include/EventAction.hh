@@ -1,6 +1,7 @@
 #ifndef EVENT_ACTION_HH
 #define EVENT_ACTION_HH
 
+#include "ElectronCreationInfo.hh"
 #include "ElectronChannelHitInfo.hh"
 #include "GammaInteractionInfo.hh"
 #include "GammaMcpEntryInfo.hh"
@@ -30,6 +31,9 @@ public:
 
   // Enregistre une seule fois chaque track électron créée.
   void RecordProducedElectron(G4int trackID, G4double globalTime);
+  void RecordGammaTrack(G4int trackID, G4int parentID);
+  void RecordElectronCreation(const ElectronCreationInfo& info);
+  G4int GetPrimaryGammaTrackID(G4int gammaTrackID) const;
 
   // Retourne le temps global observé à la création de l'électron.
   G4double GetProducedElectronGlobalTime(G4int trackID) const;
@@ -39,11 +43,14 @@ public:
   G4bool SavePhotonExit(const PhotonExitInfo& exitInfo);
   void SaveGammaInteraction(const GammaInteractionInfo& info);
   G4bool SaveGammaMcpEntry(const GammaMcpEntryInfo& entry);
+  void AddMcpEnergyDeposit(G4int side, G4int mcpIndex, G4double edep);
 
 private:
   const DetectorConstruction* fDetector;
   RunAction* fRunAction;
   std::map<G4int, G4double> fProducedElectronGlobalTimes;
+  std::map<G4int, G4int> fPrimaryGammaTrackIDs;
+  std::map<G4int, ElectronCreationInfo> fElectronCreations;
   std::set<G4int> fElectronChannelTrackIDs;
   std::set<G4int> fPhotonExitTrackIDs;
   // EventAction est recréé/réinitialisé par événement. La clé contient
@@ -60,6 +67,10 @@ private:
   G4int fGammaComptCount;
   G4int fGammaRaylCount;
   G4int fGammaConvCount;
+  G4double fEdepTotal;
+  G4double fEdepPlusTotal;
+  G4double fEdepMinusTotal;
+  std::map<std::pair<G4int, G4int>, G4double> fEdepByMcp;
 };
 
 #endif

@@ -27,6 +27,15 @@ SteppingAction::~SteppingAction()
 {
 }
 
+// On enregistre les hits d'électrons dans les canaux MCP et les sorties de photons
+// du dernier MCP de la pile +z ou -z. On enregistre également les interactions
+// gamma dans les plaques MCP. On enregistre aussi les entrées de photons gamma dans les plaques MCP.
+
+// This Geant4 stepping callback processes each step to record gamma interactions inside MCP plates, 
+// gamma entries into MCP bodies, electron hits when an electron enters an MCP channel, and photon 
+// exits when a gamma leaves the last MCP on the +z or -z stack. It also stops and kills
+// the track after recording an electron-channel hit or a photon-exit event, 
+// while safely returning early if the step or geometry information is invalid.
 void SteppingAction::UserSteppingAction(const G4Step* step)
 {
   if (!step || !fEventAction) {
@@ -54,10 +63,21 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
   const G4String particleName = particle->GetParticleName();
 
+  const G4double edep = step->GetTotalEnergyDeposit();
+  if (edep > 0.0) {
+    G4int edepSide = 0;
+    G4int edepMcpIndex = -1;
+    if (GetMcpInfo(preVolume, edepSide, edepMcpIndex)) {
+      fEventAction->AddMcpEnergyDeposit(edepSide,
+                                        edepMcpIndex,
+                                        edep);
+    }
+  }
+
   // Une interaction gamma peut avoir lieu au milieu d'un volume.
   if (particleName == "gamma") {
     const G4VProcess* process =
-      postStepPoint->GetProcessDefinedStep();
+      postStepPoint->GetProcessDefinedStep(); // Le processus qui a défini le pas de l'étape (peut être nul si le pas est dû à une limite géométrique)
     if (process) {
       const G4String processName = process->GetProcessName();
       const G4bool isPhysicalGammaInteraction =
@@ -107,10 +127,7 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
   // L'électron est enregistré lorsqu'il pénètre dans un canal MCP
   if (particleName == "e-" &&
       entersChannel) {
-    fEventAction->SaveElectronChannelHit(
-      BuildElectronChannelHit(step,
-                              channelSide,
-                              channelMcpIndex));
+    fEventAction->SaveElectronChannelHit(BuildElectronChannelHit(step, channelSide, channelMcpIndex));
     track->SetTrackStatus(fStopAndKill);
     return;
   }
@@ -119,15 +136,13 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
   // Le gamma est enregistré lorsqu'il quitte le dernier MCP
   // de la pile +z ou -z.
-  if (particleName == "gamma" &&
-      lastMcpSide != 0 &&
-      GetLastMcpSide(postVolume) != lastMcpSide) {
-    fEventAction->SavePhotonExit(
-      BuildPhotonExit(step, lastMcpSide));
+  if (particleName == "gamma" && lastMcpSide != 0 && GetLastMcpSide(postVolume) != lastMcpSide) {
+    fEventAction->SavePhotonExit(BuildPhotonExit(step, lastMcpSide));
     track->SetTrackStatus(fStopAndKill);
   }
 }
 
+// Identifie le côté et la plaque MCP contenant le volume physique.
 G4bool SteppingAction::GetMcpInfo(
   const G4VPhysicalVolume* volume,
   G4int& side,
@@ -156,9 +171,7 @@ G4bool SteppingAction::GetChannelInfo(
     return false;
   }
 
-  return fDetector->GetChannelInfo(volume->GetLogicalVolume(),
-                                   side,
-                                   mcpIndex);
+  return fDetector->GetChannelInfo(volume->GetLogicalVolume(), side, mcpIndex);
 }
 
 // Retourne +1 pour un volume du dernier MCP côté +z, -1 pour un volume du dernier MCP côté -z, 0 sinon
@@ -181,12 +194,14 @@ ElectronChannelHitInfo SteppingAction::BuildElectronChannelHit(
   ElectronChannelHitInfo hit;
   const G4Track* track = step->GetTrack();
   const G4StepPoint* postStepPoint = step->GetPostStepPoint();
-  const G4Event* event =
-    G4EventManager::GetEventManager()->GetConstCurrentEvent();
+  const G4Event* event = G4EventManager::GetEventManager()->GetConstCurrentEvent();
 
   hit.eventID = event ? event->GetEventID() : -1;
   hit.trackID = track->GetTrackID();
   hit.parentID = track->GetParentID();
+  hit.parentGammaTrackID = -1;
+  hit.primaryGammaTrackID = -1;
+  hit.hasValidCreationInfo = false;
   hit.side = side;
   hit.mcpIndex = mcpIndex;
   hit.kineticEnergy = postStepPoint->GetKineticEnergy();
@@ -199,6 +214,10 @@ ElectronChannelHitInfo SteppingAction::BuildElectronChannelHit(
   }
   hit.position = postStepPoint->GetPosition();
   hit.momentumDirection = postStepPoint->GetMomentumDirection();
+  hit.creationPosition = track->GetVertexPosition();
+  hit.creationTime = -1.0;
+  hit.creationSide = 0;
+  hit.creationMcpIndex = -1;
 
   const G4VPhysicalVolume* volume =
     postStepPoint->GetPhysicalVolume();

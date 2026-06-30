@@ -3,6 +3,8 @@
 
 #include "globals.hh"
 
+const G4int kMaxMcpPlatesInEventSummary = 10;
+
 // Une ligne minimale par événement.
 struct EventSummaryInfo
 {
@@ -22,6 +24,11 @@ struct EventSummaryInfo
   G4int gammaComptCount;
   G4int gammaRaylCount;
   G4int gammaConvCount;
+  G4double edepTotal;
+  G4double edepPlusTotal;
+  G4double edepMinusTotal;
+  G4double edepPlusByMcp[kMaxMcpPlatesInEventSummary];
+  G4double edepMinusByMcp[kMaxMcpPlatesInEventSummary];
 };
 
 #endif

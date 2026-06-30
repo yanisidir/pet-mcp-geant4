@@ -1,3 +1,5 @@
+# Historical macro: references MCP_minus_body_1 from an older multi-MCP
+# geometry. With the current kNumberOfMCPs = 1 geometry, use vis_current.mac.
 /control/verbose 0
 /run/initialize
 

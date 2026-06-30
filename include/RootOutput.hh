@@ -20,6 +20,7 @@ class RootOutput
 {
 public:
   static RootOutput* Instance();
+  static void DeleteInstance();
 
   void Open(const char* fileName);
   void FillElectronChannelHit(const ElectronChannelHitInfo& hit);
@@ -52,6 +53,9 @@ private:
   int fElectronEventID;
   int fElectronTrackID;
   int fElectronParentID;
+  int fElectronParentGammaTrackID;
+  int fElectronPrimaryGammaTrackID;
+  bool fElectronHasValidCreationInfo;
   int fElectronSide;
   int fElectronMcpIndex;
   double fElectronKineticEnergy;
@@ -62,6 +66,12 @@ private:
   double fElectronDirX;
   double fElectronDirY;
   double fElectronDirZ;
+  double fElectronCreationTime;
+  double fElectronCreationX;
+  double fElectronCreationY;
+  double fElectronCreationZ;
+  int fElectronCreationSide;
+  int fElectronCreationMcpIndex;
   char fElectronVolumeName[64];
   char fElectronCreatorProcessName[64];
 
@@ -125,6 +135,11 @@ private:
   int fSummaryGammaComptCount;
   int fSummaryGammaRaylCount;
   int fSummaryGammaConvCount;
+  double fSummaryEdepTotal;
+  double fSummaryEdepPlus;
+  double fSummaryEdepMinus;
+  double fSummaryEdepPlusMcp[kMaxMcpPlatesInEventSummary];
+  double fSummaryEdepMinusMcp[kMaxMcpPlatesInEventSummary];
 
   // McpPlateStatsTree
   int fPlateEventID;

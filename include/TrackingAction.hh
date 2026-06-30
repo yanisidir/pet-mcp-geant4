@@ -3,6 +3,7 @@
 
 #include "G4UserTrackingAction.hh"
 
+class DetectorConstruction;
 class EventAction;
 class G4Track;
 
@@ -10,12 +11,14 @@ class G4Track;
 class TrackingAction : public G4UserTrackingAction
 {
 public:
-  explicit TrackingAction(EventAction* eventAction);
+  TrackingAction(const DetectorConstruction* detector,
+                 EventAction* eventAction);
   virtual ~TrackingAction();
 
   virtual void PreUserTrackingAction(const G4Track* track);
 
 private:
+  const DetectorConstruction* fDetector;
   EventAction* fEventAction;
 };
 

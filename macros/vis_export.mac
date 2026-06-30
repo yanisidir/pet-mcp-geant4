@@ -1,3 +1,6 @@
+# Historical macro: references MCP index 1 volumes from an older multi-MCP
+# geometry. With the current kNumberOfMCPs = 1 geometry, use vis_current.mac
+# for interactive viewing.
 /control/verbose 0
 /run/initialize
 

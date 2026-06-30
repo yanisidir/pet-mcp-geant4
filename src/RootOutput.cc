@@ -31,6 +31,17 @@ RootOutput* RootOutput::Instance()
   return fInstance;
 }
 
+void RootOutput::DeleteInstance()
+{
+  if (!fInstance) {
+    return;
+  }
+
+  fInstance->Close();
+  delete fInstance;
+  fInstance = nullptr;
+}
+
 RootOutput::RootOutput()
   : fFile(nullptr),
     fElectronChannelHitTree(nullptr),
@@ -42,6 +53,9 @@ RootOutput::RootOutput()
     fElectronEventID(0),
     fElectronTrackID(0),
     fElectronParentID(0),
+    fElectronParentGammaTrackID(0),
+    fElectronPrimaryGammaTrackID(-1),
+    fElectronHasValidCreationInfo(false),
     fElectronSide(0),
     fElectronMcpIndex(-1),
     fElectronKineticEnergy(0.0),
@@ -52,6 +66,12 @@ RootOutput::RootOutput()
     fElectronDirX(0.0),
     fElectronDirY(0.0),
     fElectronDirZ(0.0),
+    fElectronCreationTime(0.0),
+    fElectronCreationX(0.0),
+    fElectronCreationY(0.0),
+    fElectronCreationZ(0.0),
+    fElectronCreationSide(0),
+    fElectronCreationMcpIndex(-1),
     fPhotonEventID(0),
     fPhotonTrackID(0),
     fPhotonParentID(0),
@@ -100,6 +120,9 @@ RootOutput::RootOutput()
     fSummaryGammaComptCount(0),
     fSummaryGammaRaylCount(0),
     fSummaryGammaConvCount(0),
+    fSummaryEdepTotal(0.0),
+    fSummaryEdepPlus(0.0),
+    fSummaryEdepMinus(0.0),
     fPlateEventID(0),
     fPlateSide(0),
     fPlateMcpIndex(0),
@@ -112,6 +135,10 @@ RootOutput::RootOutput()
   fGammaProcessName[0] = '\0';
   fGammaVolumeName[0] = '\0';
   fGammaEntryVolumeName[0] = '\0';
+  for (G4int i = 0; i < kMaxMcpPlatesInEventSummary; ++i) {
+    fSummaryEdepPlusMcp[i] = 0.0;
+    fSummaryEdepMinusMcp[i] = 0.0;
+  }
 }
 
 RootOutput::~RootOutput()
@@ -164,6 +191,18 @@ void RootOutput::Open(const char* fileName)
   fElectronChannelHitTree->Branch(
     "parentID", &fElectronParentID, "parentID/I");
   fElectronChannelHitTree->Branch(
+    "parentGammaTrackID",
+    &fElectronParentGammaTrackID,
+    "parentGammaTrackID/I");
+  fElectronChannelHitTree->Branch(
+    "primaryGammaTrackID",
+    &fElectronPrimaryGammaTrackID,
+    "primaryGammaTrackID/I");
+  fElectronChannelHitTree->Branch(
+    "hasValidCreationInfo",
+    &fElectronHasValidCreationInfo,
+    "hasValidCreationInfo/O");
+  fElectronChannelHitTree->Branch(
     "side", &fElectronSide, "side/I");
   fElectronChannelHitTree->Branch(
     "mcpIndex", &fElectronMcpIndex, "mcpIndex/I");
@@ -174,17 +213,33 @@ void RootOutput::Open(const char* fileName)
   fElectronChannelHitTree->Branch(
     "globalTime_ns", &fElectronGlobalTime, "globalTime_ns/D");
   fElectronChannelHitTree->Branch(
-    "x_cm", &fElectronX, "x_cm/D");
+    "x_mm", &fElectronX, "x_mm/D");
   fElectronChannelHitTree->Branch(
-    "y_cm", &fElectronY, "y_cm/D");
+    "y_mm", &fElectronY, "y_mm/D");
   fElectronChannelHitTree->Branch(
-    "z_cm", &fElectronZ, "z_cm/D");
+    "z_mm", &fElectronZ, "z_mm/D");
   fElectronChannelHitTree->Branch(
     "dirX", &fElectronDirX, "dirX/D");
   fElectronChannelHitTree->Branch(
     "dirY", &fElectronDirY, "dirY/D");
   fElectronChannelHitTree->Branch(
     "dirZ", &fElectronDirZ, "dirZ/D");
+  fElectronChannelHitTree->Branch(
+    "creationTime_ns",
+    &fElectronCreationTime,
+    "creationTime_ns/D");
+  fElectronChannelHitTree->Branch(
+    "creationX_mm", &fElectronCreationX, "creationX_mm/D");
+  fElectronChannelHitTree->Branch(
+    "creationY_mm", &fElectronCreationY, "creationY_mm/D");
+  fElectronChannelHitTree->Branch(
+    "creationZ_mm", &fElectronCreationZ, "creationZ_mm/D");
+  fElectronChannelHitTree->Branch(
+    "creationSide", &fElectronCreationSide, "creationSide/I");
+  fElectronChannelHitTree->Branch(
+    "creationMcpIndex",
+    &fElectronCreationMcpIndex,
+    "creationMcpIndex/I");
   fElectronChannelHitTree->Branch(
     "volumeName", fElectronVolumeName, "volumeName/C");
   fElectronChannelHitTree->Branch(
@@ -207,11 +262,11 @@ void RootOutput::Open(const char* fileName)
   fPhotonExitTree->Branch(
     "globalTime_ns", &fPhotonGlobalTime, "globalTime_ns/D");
   fPhotonExitTree->Branch(
-    "x_cm", &fPhotonX, "x_cm/D");
+    "x_mm", &fPhotonX, "x_mm/D");
   fPhotonExitTree->Branch(
-    "y_cm", &fPhotonY, "y_cm/D");
+    "y_mm", &fPhotonY, "y_mm/D");
   fPhotonExitTree->Branch(
-    "z_cm", &fPhotonZ, "z_cm/D");
+    "z_mm", &fPhotonZ, "z_mm/D");
   fPhotonExitTree->Branch(
     "dirX", &fPhotonDirX, "dirX/D");
   fPhotonExitTree->Branch(
@@ -244,11 +299,11 @@ void RootOutput::Open(const char* fileName)
   fGammaInteractionTree->Branch(
     "globalTime_ns", &fGammaGlobalTime, "globalTime_ns/D");
   fGammaInteractionTree->Branch(
-    "x_cm", &fGammaX, "x_cm/D");
+    "x_mm", &fGammaX, "x_mm/D");
   fGammaInteractionTree->Branch(
-    "y_cm", &fGammaY, "y_cm/D");
+    "y_mm", &fGammaY, "y_mm/D");
   fGammaInteractionTree->Branch(
-    "z_cm", &fGammaZ, "z_cm/D");
+    "z_mm", &fGammaZ, "z_mm/D");
   fGammaInteractionTree->Branch(
     "volumeName", fGammaVolumeName, "volumeName/C");
 
@@ -271,11 +326,11 @@ void RootOutput::Open(const char* fileName)
     &fGammaEntryGlobalTime,
     "globalTime_ns/D");
   fGammaMcpEntryTree->Branch(
-    "x_cm", &fGammaEntryX, "x_cm/D");
+    "x_mm", &fGammaEntryX, "x_mm/D");
   fGammaMcpEntryTree->Branch(
-    "y_cm", &fGammaEntryY, "y_cm/D");
+    "y_mm", &fGammaEntryY, "y_mm/D");
   fGammaMcpEntryTree->Branch(
-    "z_cm", &fGammaEntryZ, "z_cm/D");
+    "z_mm", &fGammaEntryZ, "z_mm/D");
   fGammaMcpEntryTree->Branch(
     "volumeName", fGammaEntryVolumeName, "volumeName/C");
 
@@ -341,6 +396,35 @@ void RootOutput::Open(const char* fileName)
     "gammaConvCount",
     &fSummaryGammaConvCount,
     "gammaConvCount/I");
+  fEventSummaryTree->Branch(
+    "edepTotal_keV",
+    &fSummaryEdepTotal,
+    "edepTotal_keV/D");
+  fEventSummaryTree->Branch(
+    "edepPlus_keV",
+    &fSummaryEdepPlus,
+    "edepPlus_keV/D");
+  fEventSummaryTree->Branch(
+    "edepMinus_keV",
+    &fSummaryEdepMinus,
+    "edepMinus_keV/D");
+  for (G4int i = 0; i < kMaxMcpPlatesInEventSummary; ++i) {
+    std::ostringstream plusName;
+    plusName << "edepPlusMcp" << i << "_keV";
+    const std::string plusBranchName = plusName.str();
+    fEventSummaryTree->Branch(
+      plusBranchName.c_str(),
+      &fSummaryEdepPlusMcp[i],
+      (plusBranchName + "/D").c_str());
+
+    std::ostringstream minusName;
+    minusName << "edepMinusMcp" << i << "_keV";
+    const std::string minusBranchName = minusName.str();
+    fEventSummaryTree->Branch(
+      minusBranchName.c_str(),
+      &fSummaryEdepMinusMcp[i],
+      (minusBranchName + "/D").c_str());
+  }
 
   fMcpPlateStatsTree->Branch(
     "eventID", &fPlateEventID, "eventID/I");
@@ -366,16 +450,25 @@ void RootOutput::FillElectronChannelHit(
   fElectronEventID = hit.eventID;
   fElectronTrackID = hit.trackID;
   fElectronParentID = hit.parentID;
+  fElectronParentGammaTrackID = hit.parentGammaTrackID;
+  fElectronPrimaryGammaTrackID = hit.primaryGammaTrackID;
+  fElectronHasValidCreationInfo = hit.hasValidCreationInfo;
   fElectronSide = hit.side;
   fElectronMcpIndex = hit.mcpIndex;
   fElectronKineticEnergy = hit.kineticEnergy/keV;
   fElectronGlobalTime = hit.globalTime/ns;
-  fElectronX = hit.position.x()/cm;
-  fElectronY = hit.position.y()/cm;
-  fElectronZ = hit.position.z()/cm;
+  fElectronX = hit.position.x()/mm;
+  fElectronY = hit.position.y()/mm;
+  fElectronZ = hit.position.z()/mm;
   fElectronDirX = hit.momentumDirection.x();
   fElectronDirY = hit.momentumDirection.y();
   fElectronDirZ = hit.momentumDirection.z();
+  fElectronCreationTime = hit.creationTime/ns;
+  fElectronCreationX = hit.creationPosition.x()/mm;
+  fElectronCreationY = hit.creationPosition.y()/mm;
+  fElectronCreationZ = hit.creationPosition.z()/mm;
+  fElectronCreationSide = hit.creationSide;
+  fElectronCreationMcpIndex = hit.creationMcpIndex;
 
   CopyText(fElectronVolumeName,
            sizeof(fElectronVolumeName),
@@ -399,9 +492,9 @@ void RootOutput::FillPhotonExit(const PhotonExitInfo& exitInfo)
   fPhotonSide = exitInfo.side;
   fPhotonKineticEnergy = exitInfo.kineticEnergy/keV;
   fPhotonGlobalTime = exitInfo.globalTime/ns;
-  fPhotonX = exitInfo.position.x()/cm;
-  fPhotonY = exitInfo.position.y()/cm;
-  fPhotonZ = exitInfo.position.z()/cm;
+  fPhotonX = exitInfo.position.x()/mm;
+  fPhotonY = exitInfo.position.y()/mm;
+  fPhotonZ = exitInfo.position.z()/mm;
   fPhotonDirX = exitInfo.momentumDirection.x();
   fPhotonDirY = exitInfo.momentumDirection.y();
   fPhotonDirZ = exitInfo.momentumDirection.z();
@@ -430,9 +523,9 @@ void RootOutput::FillGammaInteraction(
   fGammaMcpIndex = info.mcpIndex;
   fGammaKineticEnergy = info.kineticEnergy/keV;
   fGammaGlobalTime = info.globalTime/ns;
-  fGammaX = info.position.x()/cm;
-  fGammaY = info.position.y()/cm;
-  fGammaZ = info.position.z()/cm;
+  fGammaX = info.position.x()/mm;
+  fGammaY = info.position.y()/mm;
+  fGammaZ = info.position.z()/mm;
 
   CopyText(fGammaProcessName,
            sizeof(fGammaProcessName),
@@ -458,9 +551,9 @@ void RootOutput::FillGammaMcpEntry(
   fGammaEntryMcpIndex = entry.mcpIndex;
   fGammaEntryKineticEnergy = entry.kineticEnergy/keV;
   fGammaEntryGlobalTime = entry.globalTime/ns;
-  fGammaEntryX = entry.position.x()/cm;
-  fGammaEntryY = entry.position.y()/cm;
-  fGammaEntryZ = entry.position.z()/cm;
+  fGammaEntryX = entry.position.x()/mm;
+  fGammaEntryY = entry.position.y()/mm;
+  fGammaEntryZ = entry.position.z()/mm;
 
   CopyText(fGammaEntryVolumeName,
            sizeof(fGammaEntryVolumeName),
@@ -495,6 +588,13 @@ void RootOutput::FillEventSummary(const EventSummaryInfo& summary)
   fSummaryGammaComptCount = summary.gammaComptCount;
   fSummaryGammaRaylCount = summary.gammaRaylCount;
   fSummaryGammaConvCount = summary.gammaConvCount;
+  fSummaryEdepTotal = summary.edepTotal/keV;
+  fSummaryEdepPlus = summary.edepPlusTotal/keV;
+  fSummaryEdepMinus = summary.edepMinusTotal/keV;
+  for (G4int i = 0; i < kMaxMcpPlatesInEventSummary; ++i) {
+    fSummaryEdepPlusMcp[i] = summary.edepPlusByMcp[i]/keV;
+    fSummaryEdepMinusMcp[i] = summary.edepMinusByMcp[i]/keV;
+  }
   fEventSummaryTree->Fill();
 }
 

@@ -98,6 +98,7 @@ void RunAction::EndOfRunAction(const G4Run* run)
 
   if (!isMultithreadedMaster) {
     RootOutput::Instance()->Close();
+    RootOutput::DeleteInstance();
   }
 
   if (IsMaster()) {
