@@ -49,7 +49,6 @@ int main(int argc, char** argv)
   FTFP_BERT* physicsList = new FTFP_BERT(0);  // 0 means "don't print verbose output"
 
   // Option 1 : physique EM standard Geant4
-  // Rien à remplacer
 
   // Option 2 : physique EM Livermore
   physicsList->ReplacePhysics(new G4EmLivermorePhysics(0));
