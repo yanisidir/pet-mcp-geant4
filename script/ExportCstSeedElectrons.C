@@ -3,33 +3,31 @@
 #include "TTree.h"
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace
 {
-const Int_t kNumberOfMCPs = 3;
 const Double_t kMcpLengthMm = 3.0;
 const Double_t kMcpGapMm = 1.0;
 const Double_t kFirstMcpZMm = 10.0;
 const Double_t kChannelAngleDeg = 8.0;
 const Double_t kChannelDiameterUm = 25.0;
+const Double_t kChannelRadiusUm = 12.5;
 const Double_t kChannelPitchUm = 31.0;
-const Double_t kCstReducedRadiusMm = 1.0;
-const Double_t kCstMinimalMcpLengthUm = 500.0;
-const Double_t kCstMinimalChannelXUm = 35.0;
+const Double_t kCstMinimalMcpLengthUm = 3000.0;
+const Double_t kCstMinimalChannelXUm = 0.14 * 3000.0 * 0.5;
 const Double_t kCstMinimalChannelYUm = 0.0;
 
 struct ElectronSeed
 {
   Int_t eventID;
   Int_t trackID;
-  Int_t parentGammaTrackID;
-  Int_t primaryGammaTrackID;
   Int_t side;
   Int_t mcpIndex;
   Double_t x_mm;
@@ -45,14 +43,15 @@ struct ElectronSeed
   Double_t creationZ_mm;
   Double_t creationTime_ns;
   std::string creatorProcessName;
-  Bool_t hasValidCreationInfo;
 };
 
-std::string StackName(Int_t side)
+Double_t NaN()
 {
-  return side > 0 ? "+z" : "-z";
+  return std::numeric_limits<Double_t>::quiet_NaN();
 }
 
+// Returns the center z position of the MCP in mm, given the side (+1 or -1)
+// and the MCP index (0, 1, 2, ...).
 Double_t McpCenterZMm(Int_t side, Int_t mcpIndex)
 {
   const Double_t distanceFromSource =
@@ -60,95 +59,136 @@ Double_t McpCenterZMm(Int_t side, Int_t mcpIndex)
   return side*distanceFromSource;
 }
 
-Double_t ChannelAngleDeg(Int_t side, Int_t mcpIndex)
+// Returns the local z position in um for CST, given the electron seed.
+Double_t CstFoldedLocalZUm(const ElectronSeed& seed, Bool_t warn = true)
 {
-  const Double_t chevronAngle =
-    (mcpIndex % 2 == 0) ? kChannelAngleDeg : -kChannelAngleDeg;
-  return side*chevronAngle;
+  const Double_t centerZ_mm = McpCenterZMm(seed.side, seed.mcpIndex);
+  const Double_t localOutward_mm = seed.side*(seed.z_mm - centerZ_mm);
+  const Double_t cstZ_um =
+    (0.5 - localOutward_mm/kMcpLengthMm)*kCstMinimalMcpLengthUm;
+
+  if (warn && (cstZ_um < 0.0 || cstZ_um > kCstMinimalMcpLengthUm)) {
+    std::cerr << "Warning: CST local z is outside [0, "
+              << kCstMinimalMcpLengthUm << "] um"
+              << " | eventID=" << seed.eventID
+              << " trackID=" << seed.trackID
+              << " side=" << seed.side
+              << " z_mm=" << seed.z_mm
+              << " cstZ_um=" << cstZ_um
+              << std::endl;
+  }
+
+  return cstZ_um;
 }
 
-Double_t CstLocalZMm(const ElectronSeed& seed)
-{
-  return seed.z_mm - McpCenterZMm(seed.side, seed.mcpIndex);
-}
-
-Double_t CstMinimalLocalZUm(const ElectronSeed& seed)
-{
-  const Double_t normalizedZ =
-    (CstLocalZMm(seed) + 0.5*kMcpLengthMm) / kMcpLengthMm;
-  return normalizedZ*kCstMinimalMcpLengthUm;
-}
-
-Double_t CstMinimalChannelAxisXUm(const ElectronSeed& seed)
+// Returns the local x position in um for CST, given the local z position in um.
+Double_t CstMinimalChannelAxisXUm(Double_t cstZ_um)
 {
   const Double_t angleRad = kChannelAngleDeg*3.14159265358979323846/180.0;
   return kCstMinimalChannelXUm +
-    (CstMinimalLocalZUm(seed) - 0.5*kCstMinimalMcpLengthUm)*std::sin(angleRad);
+    (cstZ_um - 0.5*kCstMinimalMcpLengthUm)*std::tan(angleRad);
 }
 
-std::string PlateListAfterSeed(const ElectronSeed& seed)
+// Returns the normalized direction vector for CST, given the electron seed.
+Bool_t CstFoldedDirection(const ElectronSeed& seed,
+                          Double_t& dx,
+                          Double_t& dy,
+                          Double_t& dz,
+                          Bool_t warn = true)
 {
-  std::ostringstream plates;
-  bool first = true;
-  for (Int_t mcpIndex = seed.mcpIndex + 1;
-       mcpIndex < kNumberOfMCPs;
-       ++mcpIndex) {
-    if (!first) {
-      plates << ", ";
+  dx = seed.dirX;
+  dy = seed.dirY;
+  dz = -seed.side*seed.dirZ;
+
+  Double_t norm = std::sqrt(dx*dx + dy*dy + dz*dz);
+  if (norm <= 0.0) {
+    if (warn) {
+      std::cerr << "Warning: zero direction before CST normalization"
+                << " | eventID=" << seed.eventID
+                << " trackID=" << seed.trackID
+                << " side=" << seed.side
+                << std::endl;
     }
-    plates << "MCP " << mcpIndex;
-    first = false;
+    return false;
   }
 
-  return first ? "none" : plates.str();
+  dx /= norm;
+  dy /= norm;
+  dz /= norm;
+
+  if (dz > 0.0) {
+    if (warn) {
+      std::cerr << "Warning: CST direction had dz > 0; flipping direction"
+                << " | eventID=" << seed.eventID
+                << " trackID=" << seed.trackID
+                << " side=" << seed.side
+                << std::endl;
+    }
+    dx = -dx;
+    dy = -dy;
+    dz = -dz;
+  }
+
+  return true;
 }
 
-void WriteGeometryBlock(std::ofstream& output,
-                        const ElectronSeed& seed)
+// Validates the electron seed for CST export, printing warnings for any issues.
+Bool_t ValidateSeedForExport(const ElectronSeed& seed)
 {
-  const Double_t channelAngle = ChannelAngleDeg(seed.side, seed.mcpIndex);
-  const Double_t mcpCenterZ = McpCenterZMm(seed.side, seed.mcpIndex);
-  const Double_t localZ = CstLocalZMm(seed);
+  Bool_t valid = true;
 
-  output << "Stack: " << StackName(seed.side) << "\n";
-  output << "Selected electron trackID: " << seed.trackID << "\n";
-  output << "MCP where electron enters channel: MCP "
-         << seed.mcpIndex << "\n";
-  output << "MCP center z [mm]: " << mcpCenterZ << "\n";
-  output << "Geant4 hit position:\n";
-  output << "  global x,y,z [mm] = "
-         << seed.x_mm << ", "
-         << seed.y_mm << ", "
-         << seed.z_mm << "\n";
-  output << "CST local coordinate convention:\n";
-  output << "  touched channel center is taken as local x = 0, y = 0\n";
-  output << "  electron entry point is injected in the local channel frame\n";
-  output << "  local z is kept relative to the MCP center\n";
-  output << "  cst local x,y,z [mm] = 0, 0, "
-         << localZ << "\n";
-  output << "  note: do not place the reduced CST channel at Geant4 x,y; "
-         << "Geant4 global coordinates are kept only for traceability\n";
-  output << "Channel orientation:\n";
-  output << "  rotation axis convention: channels are tilted by rotateY(angle)\n";
-  output << "  channel angle [deg]: " << channelAngle << "\n";
-  output << "  approximate channel axis direction: "
-         << "(sin(angle), 0, cos(angle)); use both signs if CST treats "
-         << "the cylinder axis as unoriented\n";
-  output << "Electron direction at channel entry:\n";
-  output << "  dirX,dirY,dirZ: "
-         << seed.dirX << ", "
-         << seed.dirY << ", "
-         << seed.dirZ << "\n";
-  output << "Plates to draw in CST:\n";
-  output << "  local detailed geometry: MCP " << seed.mcpIndex
-         << ", only the touched channel plus a small local glass environment\n";
-  output << "  downstream plates in stack direction: "
-         << PlateListAfterSeed(seed) << "\n";
-  output << "  recommendation: keep a fuller or corridor-like channel geometry "
-         << "only for these downstream plates, not the full 3+3 detector\n";
-  output << "\n";
+  if (seed.side != 1 && seed.side != -1) {
+    std::cerr << "Warning: invalid side for CST export"
+              << " | eventID=" << seed.eventID
+              << " trackID=" << seed.trackID
+              << " side=" << seed.side
+              << std::endl;
+    valid = false;
+  }
+
+  if (seed.mcpIndex < 0) {
+    std::cerr << "Warning: invalid MCP index for CST export"
+              << " | eventID=" << seed.eventID
+              << " trackID=" << seed.trackID
+              << " mcpIndex=" << seed.mcpIndex
+              << std::endl;
+    valid = false;
+  }
+
+  if (seed.kineticEnergy_keV <= 0.0) {
+    std::cerr << "Warning: non-positive electron kinetic energy"
+              << " | eventID=" << seed.eventID
+              << " trackID=" << seed.trackID
+              << " E_keV=" << seed.kineticEnergy_keV
+              << std::endl;
+    valid = false;
+  }
+
+  const Double_t directionNorm =
+    std::sqrt(seed.dirX*seed.dirX +
+              seed.dirY*seed.dirY +
+              seed.dirZ*seed.dirZ);
+  if (directionNorm <= 0.0) {
+    std::cerr << "Warning: zero Geant4 direction for CST export"
+              << " | eventID=" << seed.eventID
+              << " trackID=" << seed.trackID
+              << std::endl;
+    valid = false;
+  }
+
+  CstFoldedLocalZUm(seed, true);
+
+  Double_t cstDirX = 0.0;
+  Double_t cstDirY = 0.0;
+  Double_t cstDirZ = 0.0;
+  if (!CstFoldedDirection(seed, cstDirX, cstDirY, cstDirZ, true)) {
+    valid = false;
+  }
+
+  return valid;
 }
 
+// Finds the first available leaf from a list of candidate names in the given tree.
 TLeaf* FindLeaf(TTree* tree,
                 const std::vector<std::string>& candidates,
                 std::string& selectedName)
@@ -164,6 +204,7 @@ TLeaf* FindLeaf(TTree* tree,
   return nullptr;
 }
 
+// Requires that the specified branch exists in the tree and returns its leaf.
 TLeaf* RequireLeaf(TTree* tree, const std::string& branchName)
 {
   if (!tree || !tree->GetBranch(branchName.c_str())) {
@@ -173,6 +214,7 @@ TLeaf* RequireLeaf(TTree* tree, const std::string& branchName)
   return tree->GetLeaf(branchName.c_str());
 }
 
+// Finds the first event in the event tree that has isCoincidence == true.
 bool FindFirstCoincidenceEvent(TTree* eventTree, Int_t& coincidenceEventID)
 {
   if (!eventTree ||
@@ -202,141 +244,99 @@ bool FindFirstCoincidenceEvent(TTree* eventTree, Int_t& coincidenceEventID)
   return false;
 }
 
+// Prints the details of the electron seed to standard output.
 void PrintSeed(const ElectronSeed& seed)
 {
+  Double_t cstDirX = 0.0;
+  Double_t cstDirY = 0.0;
+  Double_t cstDirZ = 0.0;
+  CstFoldedDirection(seed, cstDirX, cstDirY, cstDirZ, false);
+  const Double_t cstZ_um = CstFoldedLocalZUm(seed, false);
+  const Double_t cstX_um = CstMinimalChannelAxisXUm(cstZ_um);
+
   std::cout << "  side=" << (seed.side > 0 ? "+z" : "-z")
             << " trackID=" << seed.trackID
             << " mcpIndex=" << seed.mcpIndex
-            << " E=" << seed.kineticEnergy_keV << " keV"
-            << " t=" << seed.time_ns << " ns"
-            << " pos=(" << seed.x_mm << ", "
-            << seed.y_mm << ", "
-            << seed.z_mm << ") mm"
-            << " dir=(" << seed.dirX << ", "
-            << seed.dirY << ", "
-            << seed.dirZ << ")"
-            << " creator=" << seed.creatorProcessName
-            << " validCreation="
-            << (seed.hasValidCreationInfo ? "true" : "false")
+            << "\n    Geant4 position [mm] = ("
+            << seed.x_mm << ", " << seed.y_mm << ", " << seed.z_mm << ")"
+            << "\n    CST position [um]   = ("
+            << cstX_um << ", "
+            << kCstMinimalChannelYUm << ", "
+            << cstZ_um << ")"
+            << "\n    Geant4 direction    = ("
+            << seed.dirX << ", " << seed.dirY << ", " << seed.dirZ << ")"
+            << "\n    CST direction       = ("
+            << cstDirX << ", " << cstDirY << ", " << cstDirZ << ")"
+            << "\n    kinetic energy      = "
+            << 1000.0*seed.kineticEnergy_keV << " eV"
+            << "\n    creator process     = "
+            << seed.creatorProcessName
             << std::endl;
 }
 
+// Writes the CSV header line to the output stream.
+void WriteCsvHeader(std::ofstream& output)
+{
+  output
+    << "eventID,trackID,side,mcpIndex,"
+    << "cstLocalX_um,cstLocalY_um,cstLocalZ_um,"
+    << "dirX,dirY,dirZ,"
+    << "kineticEnergy_eV,time_ns,"
+    << "channelAngle_deg,channelDiameter_um,channelRadius_um,channelPitch_um,"
+    << "geant4X_mm,geant4Y_mm,geant4Z_mm,"
+    << "geant4DirX,geant4DirY,geant4DirZ,"
+    << "creationX_mm,creationY_mm,creationZ_mm,creationTime_ns,"
+    << "creatorProcessName\n";
+}
+
+// Writes a single electron seed row to the CSV output steam.
 void WriteCsvRow(std::ofstream& output, const ElectronSeed& seed)
 {
+  Double_t cstDirX = 0.0;
+  Double_t cstDirY = 0.0;
+  Double_t cstDirZ = 0.0;
+  CstFoldedDirection(seed, cstDirX, cstDirY, cstDirZ, false);
+
+  const Double_t cstZ_um = CstFoldedLocalZUm(seed, false);
+  const Double_t cstX_um = CstMinimalChannelAxisXUm(cstZ_um);
+
+  // CST script must use CHANNEL_RADIUS_UM = 12.5 to match this export.
   output << seed.eventID << ","
          << seed.trackID << ","
-         << CstMinimalChannelAxisXUm(seed) << ","
+         << seed.side << ","
+         << seed.mcpIndex << ","
+         << cstX_um << ","
          << kCstMinimalChannelYUm << ","
-         << CstMinimalLocalZUm(seed) << ","
+         << cstZ_um << ","
+         << cstDirX << ","
+         << cstDirY << ","
+         << cstDirZ << ","
+         << 1000.0*seed.kineticEnergy_keV << ","
+         << seed.time_ns << ","
+         << kChannelAngleDeg << ","
+         << kChannelDiameterUm << ","
+         << kChannelRadiusUm << ","
+         << kChannelPitchUm << ","
+         << seed.x_mm << ","
+         << seed.y_mm << ","
+         << seed.z_mm << ","
          << seed.dirX << ","
          << seed.dirY << ","
          << seed.dirZ << ","
-         << 1000.0*seed.kineticEnergy_keV << ","
-         << seed.time_ns
+         << seed.creationX_mm << ","
+         << seed.creationY_mm << ","
+         << seed.creationZ_mm << ","
+         << seed.creationTime_ns << ","
+         << seed.creatorProcessName
          << "\n";
 }
 
-bool WriteGeometryRequest(const char* geometryRequestName,
-                          const ElectronSeed& plusSeed,
-                          const ElectronSeed& minusSeed,
-                          Int_t plusCount,
-                          Int_t minusCount)
-{
-  std::ofstream output(geometryRequestName);
-  if (!output) {
-    std::cerr << "Cannot create geometry request file: "
-              << geometryRequestName << std::endl;
-    return false;
-  }
+} // namespace
 
-  output << std::setprecision(12);
-  output << "CST geometry request for selected Geant4 coincidence event\n";
-  output << "=========================================================\n\n";
-  output << "Purpose\n";
-  output << "-------\n";
-  output << "Prepare a reduced CST geometry seeded by two Geant4 electrons: "
-         << "one entering an MCP_channel on +z and one entering an MCP_channel "
-         << "on -z.\n\n";
-
-  output << "1. Selected Geant4 event information\n";
-  output << "------------------------------------\n";
-  output << "eventID: " << plusSeed.eventID << "\n";
-  output << "detected channel electrons in event: +z="
-         << plusCount << ", -z=" << minusCount << "\n";
-  output << "Geant4 full detector note: the full Geant4 geometry contains "
-         << "about 1.5 million parameterised channels per MCP. It must not "
-         << "be reproduced directly in CST.\n\n";
-
-  output << "Geant4 reference geometry used to interpret the hit\n";
-  output << "--------------------------------------------------\n";
-  output << "Number of MCPs per stack: " << kNumberOfMCPs << "\n";
-  output << "MCP length [mm]: " << kMcpLengthMm << "\n";
-  output << "MCP gap [mm]: " << kMcpGapMm << "\n";
-  output << "First MCP center distance from source [mm]: "
-         << kFirstMcpZMm << "\n";
-  output << "Channel diameter [um]: " << kChannelDiameterUm << "\n";
-  output << "Channel pitch [um]: " << kChannelPitchUm << "\n";
-  output << "Chevron channel angle magnitude [deg]: "
-         << kChannelAngleDeg << "\n";
-  output << "Electric field in this Geant4 export configuration: disabled\n";
-  output << "MCP material in this Geant4 export configuration: GlassLead60Perc\n";
-  output << "Primary source: two back-to-back 511 keV photons\n\n";
-
-  output << "2. Reduced CST geometry parameters\n";
-  output << "----------------------------------\n";
-  output << "CST geometry type: local/intermediate reduced MCP model\n";
-  output << "Number of MCPs per stack to draw: " << kNumberOfMCPs << "\n";
-  output << "MCP length [mm]: " << kMcpLengthMm << "\n";
-  output << "MCP gap [mm]: " << kMcpGapMm << "\n";
-  output << "Channel diameter [um]: " << kChannelDiameterUm << "\n";
-  output << "Channel pitch [um]: " << kChannelPitchUm << "\n";
-  output << "Channel angle [deg]: +/-" << kChannelAngleDeg << "\n";
-  output << "Reduced transverse radius around touched channel [mm]: "
-         << kCstReducedRadiusMm << "\n";
-  output << "Channel selection rule: draw a limited set of channels around "
-         << "local x=0, y=0 using the pitch above; do not draw the full "
-         << "Geant4 channel population.\n\n";
-
-  output << "Important limitation\n";
-  output << "--------------------\n";
-  output << "ElectronChannelHitTree stores the electron entry point into a "
-         << "channel, but not the Geant4 parameterised channel copy number. "
-         << "Therefore CST local x,y are set to 0,0 at the touched channel "
-         << "center. Geant4 global x,y,z are kept separately for "
-         << "traceability only.\n\n";
-
-  output << "+z seed geometry\n";
-  output << "----------------\n";
-  WriteGeometryBlock(output, plusSeed);
-
-  output << "-z seed geometry\n";
-  output << "----------------\n";
-  WriteGeometryBlock(output, minusSeed);
-
-  output << "Reduced CST drawing strategy\n";
-  output << "----------------------------\n";
-  output << "1. Do not draw the full 3+3 MCP detector for this seed study.\n";
-  output << "2. For the MCP where the selected electron enters, draw only:\n";
-  output << "   - the touched channel centered near the listed entry point;\n";
-  output << "   - a small local lead-glass environment around that channel;\n";
-  output << "   - the channel orientation listed above.\n";
-  output << "3. For MCPs downstream of that entry point in the stack direction, "
-         << "draw either:\n";
-  output << "   - a fuller local corridor of channels that the particle may cross; "
-         << "or\n";
-  output << "   - a simplified volume sufficient for transport studies.\n";
-  output << "4. Avoid drawing unrelated plates from the opposite stack unless "
-         << "the selected seed electron belongs to that stack.\n";
-  output << "5. Use geant4_seed_electrons.csv as the particle initial condition file.\n";
-
-  return true;
-}
-}
 
 void ExportCstSeedElectrons(
-  const char* fileName = "build/mcp_output.root",
-  const char* outputName = "geant4_seed_electrons.csv",
-  const char* geometryRequestName = "cst_geometry_request.txt")
+  const char* fileName = "mcp_output.root",
+  const char* outputName = "geant4_seed_electrons.csv")
 {
   TFile* file = TFile::Open(fileName, "READ");
   if (!file || file->IsZombie()) {
@@ -371,13 +371,8 @@ void ExportCstSeedElectrons(
   TLeaf* trackIDLeaf = RequireLeaf(electronTree, "trackID");
   TLeaf* sideLeaf = RequireLeaf(electronTree, "side");
   TLeaf* mcpIndexLeaf = RequireLeaf(electronTree, "mcpIndex");
-  TLeaf* parentGammaLeaf = RequireLeaf(electronTree, "parentGammaTrackID");
-  TLeaf* primaryGammaLeaf = RequireLeaf(electronTree, "primaryGammaTrackID");
   TLeaf* energyLeaf = RequireLeaf(electronTree, "kineticEnergy_keV");
   TLeaf* timeLeaf = RequireLeaf(electronTree, "globalTime_ns");
-  TLeaf* validCreationLeaf =
-    RequireLeaf(electronTree, "hasValidCreationInfo");
-  TLeaf* creationTimeLeaf = RequireLeaf(electronTree, "creationTime_ns");
 
   std::string xName;
   std::string yName;
@@ -395,29 +390,35 @@ void ExportCstSeedElectrons(
   TLeaf* dirXLeaf = FindLeaf(electronTree, {"dirX", "px", "momX"}, dirXName);
   TLeaf* dirYLeaf = FindLeaf(electronTree, {"dirY", "py", "momY"}, dirYName);
   TLeaf* dirZLeaf = FindLeaf(electronTree, {"dirZ", "pz", "momZ"}, dirZName);
+
   TLeaf* creationXLeaf =
     FindLeaf(electronTree, {"creationX_mm", "creationX", "vertexX"}, creationXName);
   TLeaf* creationYLeaf =
     FindLeaf(electronTree, {"creationY_mm", "creationY", "vertexY"}, creationYName);
   TLeaf* creationZLeaf =
     FindLeaf(electronTree, {"creationZ_mm", "creationZ", "vertexZ"}, creationZName);
+  TLeaf* creationTimeLeaf =
+    electronTree->GetBranch("creationTime_ns")
+      ? electronTree->GetLeaf("creationTime_ns")
+      : nullptr;
 
   if (!eventIDLeaf || !trackIDLeaf || !sideLeaf || !mcpIndexLeaf ||
-      !parentGammaLeaf || !primaryGammaLeaf || !energyLeaf ||
-      !timeLeaf || !validCreationLeaf || !creationTimeLeaf ||
+      !energyLeaf || !timeLeaf ||
       !xLeaf || !yLeaf || !zLeaf ||
-      !dirXLeaf || !dirYLeaf || !dirZLeaf ||
-      !creationXLeaf || !creationYLeaf || !creationZLeaf ||
-      !electronTree->GetBranch("creatorProcessName")) {
-    std::cerr << "ElectronChannelHitTree does not contain all branches "
-              << "needed for CST export." << std::endl;
+      !dirXLeaf || !dirYLeaf || !dirZLeaf) {
+    std::cerr << "ElectronChannelHitTree does not contain all required "
+              << "branches for CST export." << std::endl;
     file->Close();
     delete file;
     return;
   }
 
-  char creatorProcessName[128] = "";
-  electronTree->SetBranchAddress("creatorProcessName", creatorProcessName);
+  char creatorProcessName[128] = "unknown";
+  const Bool_t hasCreatorProcessBranch =
+    electronTree->GetBranch("creatorProcessName") != nullptr;
+  if (hasCreatorProcessBranch) {
+    electronTree->SetBranchAddress("creatorProcessName", creatorProcessName);
+  }
 
   ElectronSeed plusSeed;
   ElectronSeed minusSeed;
@@ -427,7 +428,12 @@ void ExportCstSeedElectrons(
   Int_t minusCount = 0;
 
   const Long64_t electronEntries = electronTree->GetEntries();
+  // Loop over all electron entries to find the first valid seed for each side.
   for (Long64_t entry = 0; entry < electronEntries; ++entry) {
+    std::snprintf(creatorProcessName,
+                  sizeof(creatorProcessName),
+                  "unknown");
+
     electronTree->GetEntry(entry);
 
     const Int_t eventID = static_cast<Int_t>(eventIDLeaf->GetValue());
@@ -451,10 +457,6 @@ void ExportCstSeedElectrons(
     ElectronSeed seed;
     seed.eventID = eventID;
     seed.trackID = static_cast<Int_t>(trackIDLeaf->GetValue());
-    seed.parentGammaTrackID =
-      static_cast<Int_t>(parentGammaLeaf->GetValue());
-    seed.primaryGammaTrackID =
-      static_cast<Int_t>(primaryGammaLeaf->GetValue());
     seed.side = side;
     seed.mcpIndex = static_cast<Int_t>(mcpIndexLeaf->GetValue());
     seed.x_mm = xLeaf->GetValue();
@@ -465,13 +467,19 @@ void ExportCstSeedElectrons(
     seed.dirZ = dirZLeaf->GetValue();
     seed.kineticEnergy_keV = energyLeaf->GetValue();
     seed.time_ns = timeLeaf->GetValue();
-    seed.creationX_mm = creationXLeaf->GetValue();
-    seed.creationY_mm = creationYLeaf->GetValue();
-    seed.creationZ_mm = creationZLeaf->GetValue();
-    seed.creationTime_ns = creationTimeLeaf->GetValue();
-    seed.creatorProcessName = creatorProcessName;
-    seed.hasValidCreationInfo =
-      static_cast<Bool_t>(validCreationLeaf->GetValue());
+    seed.creationX_mm = creationXLeaf ? creationXLeaf->GetValue() : NaN();
+    seed.creationY_mm = creationYLeaf ? creationYLeaf->GetValue() : NaN();
+    seed.creationZ_mm = creationZLeaf ? creationZLeaf->GetValue() : NaN();
+    seed.creationTime_ns =
+      creationTimeLeaf ? creationTimeLeaf->GetValue() : NaN();
+    seed.creatorProcessName =
+      hasCreatorProcessBranch && creatorProcessName[0] != '\0'
+        ? creatorProcessName
+        : "unknown";
+
+    if (!ValidateSeedForExport(seed)) {
+      continue;
+    }
 
     if (side > 0) {
       plusSeed = seed;
@@ -502,34 +510,20 @@ void ExportCstSeedElectrons(
   }
 
   output << std::setprecision(12);
-  output
-    << "eventID,trackID,"
-    << "cstLocalX_um,cstLocalY_um,cstLocalZ_um,"
-    << "dirX,dirY,dirZ,"
-    << "kineticEnergy_eV,time_ns\n";
+  WriteCsvHeader(output);
   WriteCsvRow(output, plusSeed);
   WriteCsvRow(output, minusSeed);
   output.close();
 
-  const bool wroteGeometryRequest =
-    WriteGeometryRequest(geometryRequestName,
-                         plusSeed,
-                         minusSeed,
-                         plusCount,
-                         minusCount);
-
   std::cout << "\n=== CST seed electron export ===" << std::endl;
   std::cout << "ROOT file: " << fileName << std::endl;
   std::cout << "CSV file : " << outputName << std::endl;
-  if (wroteGeometryRequest) {
-    std::cout << "Geometry request: "
-              << geometryRequestName << std::endl;
-  }
   std::cout << "Selected coincidence eventID: "
             << selectedEventID << std::endl;
   std::cout << "Detected channel electrons in selected event:"
             << " +z=" << plusCount
             << " -z=" << minusCount << std::endl;
+  std::cout << "Number of exported seeds: 2" << std::endl;
   std::cout << "\nExported electrons:" << std::endl;
   PrintSeed(plusSeed);
   PrintSeed(minusSeed);
