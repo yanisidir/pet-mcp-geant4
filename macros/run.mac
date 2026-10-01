@@ -1,15 +1,13 @@
 /control/verbose 0
-/run/verbose 1
+/run/verbose 0
 /event/verbose 0
 /tracking/verbose 0
+/random/setSeeds 42 4242
 
-/mcp/setMaterial GlassLead60Perc
-/mcp/enableStackElectricFields false
-#/mcp/stackFieldMagnitude 1 kV/mm
+/control/macroPath .:macros:../macros:../../macros
+/control/execute geometry.mac
+/control/execute source.mac
+/source/print
+
 /run/initialize
-
-/gun/particle gamma
-/gun/energy 511 keV
-/gun/position 0 0 0 cm
-/gun/direction 0 0 1
-/run/beamOn 10
+/run/beamOn 1000

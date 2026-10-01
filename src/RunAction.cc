@@ -1,159 +1,67 @@
 #include "RunAction.hh"
+#include "DetectorConstruction.hh"
+#include "OutputMessenger.hh"
+#include "ScanSummaryInfo.hh"
 
-#include "RootOutput.hh"
-
-#include "G4RunManager.hh"
-#include "G4Threading.hh"
+#include "G4Run.hh"
 #include "G4ios.hh"
 
-CoincidenceRun::CoincidenceRun()
-  : G4Run(),
-    fProcessedEventCount(0),
-    fPlusDetectedEventCount(0),
-    fMinusDetectedEventCount(0),
-    fCoincidenceEventCount(0)
-{
-}
-
-CoincidenceRun::~CoincidenceRun()
-{
-}
-
-void CoincidenceRun::CountEvent(G4bool hasPlusHit,
-                                G4bool hasMinusHit)
-{
-  ++fProcessedEventCount;
-  if (hasPlusHit) {
-    ++fPlusDetectedEventCount;
-  }
-  if (hasMinusHit) {
-    ++fMinusDetectedEventCount;
-  }
-  if (hasPlusHit && hasMinusHit) {
-    ++fCoincidenceEventCount;
-  }
-}
-
-void CoincidenceRun::Merge(const G4Run* run)
-{
-  const CoincidenceRun* localRun =
-    dynamic_cast<const CoincidenceRun*>(run);
-  if (localRun) {
-    fProcessedEventCount += localRun->fProcessedEventCount;
-    fPlusDetectedEventCount +=
-      localRun->fPlusDetectedEventCount;
-    fMinusDetectedEventCount +=
-      localRun->fMinusDetectedEventCount;
-    fCoincidenceEventCount +=
-      localRun->fCoincidenceEventCount;
-  }
-
-  G4Run::Merge(run);
-}
-
-G4int CoincidenceRun::GetProcessedEventCount() const
-{
-  return fProcessedEventCount;
-}
-
-G4int CoincidenceRun::GetPlusDetectedEventCount() const
-{
-  return fPlusDetectedEventCount;
-}
-
-G4int CoincidenceRun::GetMinusDetectedEventCount() const
-{
-  return fMinusDetectedEventCount;
-}
-
-G4int CoincidenceRun::GetCoincidenceEventCount() const
-{
-  return fCoincidenceEventCount;
-}
-
-RunAction::RunAction()
-  : G4UserRunAction()
+RunAction::RunAction(const DetectorConstruction* detector)
+  : fDetector(detector),
+    fMessenger(new OutputMessenger(this))
 {
 }
 
 RunAction::~RunAction()
 {
+  delete fMessenger;
 }
 
-void RunAction::BeginOfRunAction(const G4Run* run)
+void RunAction::BeginOfRunAction(const G4Run*)
 {
-  const G4bool isMultithreadedMaster =
-    G4Threading::IsMultithreadedApplication() && IsMaster();
-  if (!isMultithreadedMaster) {
-    RootOutput::Instance()->Open("mcp_output.root");
-  }
+  fPlusCount = fMinusCount = fCoincidenceCount = 0;
+  fElectronHitsPlus = fElectronHitsMinus = 0;
+  fOutput.Open(fFileName.c_str());
+}
 
-  G4cout << "### Run " << run->GetRunID() << " starts." << G4endl;
+void RunAction::RecordEvent(const EventSummaryInfo& summary)
+{
+  if (summary.electronChannelPlusCount > 0) ++fPlusCount;
+  if (summary.electronChannelMinusCount > 0) ++fMinusCount;
+  if (summary.isCoincidence) ++fCoincidenceCount;
+  fElectronHitsPlus += summary.electronChannelPlusCount;
+  fElectronHitsMinus += summary.electronChannelMinusCount;
+  fOutput.FillEventSummary(summary);
 }
 
 void RunAction::EndOfRunAction(const G4Run* run)
 {
-  const G4bool isMultithreadedMaster =
-    G4Threading::IsMultithreadedApplication() && IsMaster();
+  fOutput.Close();
+  const auto events = run->GetNumberOfEvent();
+  const auto electronHits = fElectronHitsPlus + fElectronHitsMinus;
 
-  if (!isMultithreadedMaster) {
-    RootOutput::Instance()->Close();
-    RootOutput::DeleteInstance();
-  }
+  G4cout << "Processed events: " << events << G4endl
+         << "Electrons reaching a channel: " << electronHits << G4endl
+         << "Events detected on +z: " << fPlusCount << G4endl
+         << "Events detected on -z: " << fMinusCount << G4endl
+         << "Coincidence events: " << fCoincidenceCount << G4endl
+         << "Coincidence efficiency: "
+         << (events > 0 ? G4double(fCoincidenceCount)/events : 0.) << G4endl;
 
-  if (IsMaster()) {
-    const CoincidenceRun* coincidenceRun =
-      dynamic_cast<const CoincidenceRun*>(run);
-    const G4int eventCount =
-      coincidenceRun
-        ? coincidenceRun->GetProcessedEventCount()
-        : 0;
-    const G4int coincidenceCount =
-      coincidenceRun
-        ? coincidenceRun->GetCoincidenceEventCount()
-        : 0;
-    const G4double coincidenceEfficiency =
-      eventCount > 0
-        ? static_cast<G4double>(coincidenceCount)/eventCount
-        : 0.0;
+  if (!fOutput.HasScanFile()) return;
 
-    G4cout << G4endl
-           << "=== MCP/PET detection summary ===" << G4endl
-           << "Processed events: " << eventCount << G4endl
-           << "Events detected on +z: "
-           << (coincidenceRun
-                 ? coincidenceRun->GetPlusDetectedEventCount()
-                 : 0)
-           << G4endl
-           << "Events detected on -z: "
-           << (coincidenceRun
-                 ? coincidenceRun->GetMinusDetectedEventCount()
-                 : 0)
-           << G4endl
-           << "Coincidence events: " << coincidenceCount << G4endl
-           << "Coincidence efficiency: "
-           << coincidenceEfficiency
-           << " (" << 100.0*coincidenceEfficiency << " %)"
-           << G4endl
-           << "=================================" << G4endl;
-  }
+  ScanSummaryInfo row;
+  row.stacksPlus = fDetector ? fDetector->GetStackCount(1) : 0;
+  row.stacksMinus = fDetector ? fDetector->GetStackCount(-1) : 0;
+  row.events = events;
+  row.electronHits = electronHits;
+  row.electronHitsPlus = fElectronHitsPlus;
+  row.electronHitsMinus = fElectronHitsMinus;
+  row.eventsWithHitPlus = fPlusCount;
+  row.eventsWithHitMinus = fMinusCount;
+  row.coincidences = fCoincidenceCount;
+  fOutput.AppendScanRow(row);
 
-  G4cout << "### Run " << run->GetRunID()
-         << " ends after " << run->GetNumberOfEvent()
-         << " events." << G4endl;
-}
-
-G4Run* RunAction::GenerateRun()
-{
-  return new CoincidenceRun;
-}
-
-void RunAction::CountEvent(G4bool hasPlusHit,
-                           G4bool hasMinusHit)
-{
-  CoincidenceRun* run = dynamic_cast<CoincidenceRun*>(
-    G4RunManager::GetRunManager()->GetNonConstCurrentRun());
-  if (run) {
-    run->CountEvent(hasPlusHit, hasMinusHit);
-  }
+  G4cout << "Scan row appended: stacks " << row.stacksPlus << "/"
+         << row.stacksMinus << ", electrons " << row.electronHits << G4endl;
 }

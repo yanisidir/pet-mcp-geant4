@@ -1,60 +1,35 @@
 #ifndef RUN_ACTION_HH
 #define RUN_ACTION_HH
-
-#include "G4Run.hh"
+#include "RootOutput.hh"
 #include "G4UserRunAction.hh"
 #include "globals.hh"
 
-// G4Run spécialisé qui fusionne proprement les compteurs des workers.
-class CoincidenceRun : public G4Run
-{
-public:
-  CoincidenceRun();
-  virtual ~CoincidenceRun();
+class DetectorConstruction;
+class OutputMessenger;
 
-  void CountEvent(G4bool hasPlusHit, G4bool hasMinusHit);
-  virtual void Merge(const G4Run* run);
-
-  G4int GetProcessedEventCount() const;
-  G4int GetPlusDetectedEventCount() const;
-  G4int GetMinusDetectedEventCount() const;
-  G4int GetCoincidenceEventCount() const;
-
-private:
-  G4int fProcessedEventCount;
-  G4int fPlusDetectedEventCount;
-  G4int fMinusDetectedEventCount;
-  G4int fCoincidenceEventCount;
-};
-
+// Own the output and the run counters (serial execution).
 class RunAction : public G4UserRunAction
 {
 public:
+  explicit RunAction(const DetectorConstruction* detector);
+  ~RunAction() override;
+  void BeginOfRunAction(const G4Run* run) override;
+  void EndOfRunAction(const G4Run* run) override;
+  void RecordEvent(const EventSummaryInfo& summary);
+  RootOutput& GetOutput() { return fOutput; }
 
-  // Constructeur.
-  RunAction();
+  void SetFileName(const G4String& name) { fFileName = name; }
+  void ResetScanFile(const G4String& name) { fOutput.ResetScanFile(name); }
 
-  virtual ~RunAction();
-
-  // Fonction appelée automatiquement au début du run.
-  //
-  // Utilisée notamment pour :
-  // - créer le fichier ROOT ;
-  // - créer les TTrees ;
-  // - initialiser les sorties.
-  virtual void BeginOfRunAction(const G4Run* run);
-
-  // Fonction appelée automatiquement à la fin du run.
-  //
-  // Utilisée notamment pour :
-  // - écrire les données ROOT ;
-  // - fermer le fichier ROOT ;
-  // - afficher un résumé du run.
-  virtual void EndOfRunAction(const G4Run* run);
-  virtual G4Run* GenerateRun();
-
-  // Transmet le résultat de l'événement au CoincidenceRun du worker.
-  void CountEvent(G4bool hasPlusHit, G4bool hasMinusHit);
+private:
+  const DetectorConstruction* fDetector;
+  OutputMessenger* fMessenger;
+  RootOutput fOutput;
+  G4String fFileName = "mcp_output.root";
+  G4int fPlusCount = 0;
+  G4int fMinusCount = 0;
+  G4int fCoincidenceCount = 0;
+  G4int fElectronHitsPlus = 0;
+  G4int fElectronHitsMinus = 0;
 };
-
 #endif

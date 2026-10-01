@@ -1,31 +1,20 @@
 #ifndef ELECTRON_CHANNEL_HIT_INFO_HH
 #define ELECTRON_CHANNEL_HIT_INFO_HH
-
-#include "G4String.hh"
 #include "G4ThreeVector.hh"
 #include "globals.hh"
 
-// Informations enregistrées lorsqu'un électron entre dans MCP_channel.
+// State at the first channel entry, in Geant4 internal units.
 struct ElectronChannelHitInfo
 {
-  G4int eventID;
-  G4int trackID;
-  G4int parentID;
-  G4int parentGammaTrackID;
-  G4int primaryGammaTrackID;
-  G4bool hasValidCreationInfo;
-  G4int side;
-  G4int mcpIndex;
-  G4double kineticEnergy;
-  G4double globalTime;
+  G4int eventID = 0;
+  G4int trackID = 0;
+  G4int side = 0;
+  G4int stackIndex = 0;
+  G4int channelCopyNumber = 0;
+  G4double kineticEnergy = 0.;
+  G4double globalTime = 0.;
   G4ThreeVector position;
   G4ThreeVector momentumDirection;
-  G4ThreeVector creationPosition;
-  G4double creationTime;
-  G4int creationSide;
-  G4int creationMcpIndex;
-  G4String volumeName;
   G4String creatorProcessName;
 };
-
 #endif

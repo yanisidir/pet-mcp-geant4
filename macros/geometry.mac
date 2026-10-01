@@ -1,0 +1,19 @@
+# Geometrie de reference.
+
+/mcp/stacksPlus 1
+/mcp/stacksMinus 1
+/mcp/firstPlateZ 1 cm
+/mcp/stackGap 100 um
+
+/mcp/plateThickness 1000 um
+/mcp/plateRadius 25 mm
+
+/mcp/channelDiameter 25 um
+/mcp/channelPitch 31 um
+/mcp/channelAngle 8 deg
+/mcp/chevron false
+/mcp/edgeMarginFraction 0.2
+
+/mcp/worldSize 10 cm
+/mcp/productionCut 1 um
+/mcp/killGammaOnExit false

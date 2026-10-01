@@ -1,209 +1,93 @@
 #ifndef DETECTOR_CONSTRUCTION_HH
 #define DETECTOR_CONSTRUCTION_HH
 
+#include "G4SystemOfUnits.hh"
 #include "G4ThreeVector.hh"
 #include "G4VUserDetectorConstruction.hh"
 #include "globals.hh"
-
+#include <map>
 #include <vector>
 
+class DetectorMessenger;
 class G4LogicalVolume;
 class G4Material;
+class G4ProductionCuts;
+class G4Region;
 class G4VPhysicalVolume;
-class DetectorMessenger;
-class ElectricFieldSetup;
+class HoleParameterisation;
 
-// DetectorConstruction décrit entièrement la géométrie
-// et les matériaux de la simulation.
-//
-// Son rôle est de construire :
-//
-// - le monde Geant4 (World) ;
-// - une pile MCP côté +z ;
-// - une pile MCP symétrique côté -z ;
-// - les canaux paramétrés de chaque MCP ;
-// - les matériaux associés.
-//
-// C'est la classe qui définit l'environnement physique
-// dans lequel les photons gamma vont se propager
-// et interagir.
+// Stacks of lead-glass MCP plates with parameterised vacuum channels,
+// configured by DetectorMessenger.
 class DetectorConstruction : public G4VUserDetectorConstruction
 {
 public:
-
-  // Constructeur.
   DetectorConstruction();
+  ~DetectorConstruction() override;
+  G4VPhysicalVolume* Construct() override;
 
-  virtual ~DetectorConstruction();
+  // +1 / -1 identifies the side; 0 means outside the requested volumes.
+  G4int GetChannelSide(const G4LogicalVolume* volume) const;
+  G4int GetMcpSide(const G4LogicalVolume* volume) const;
+  // Plate rank in its stack, counted from the origin; -1 outside.
+  G4int GetStackIndex(const G4LogicalVolume* volume) const;
 
-  // Fonction principale appelée par Geant4
-  // pour construire toute la géométrie.
-  //
-  // Elle construit successivement :
-  //
-  // World
-  //   ↓
-  // MCP stacks (+z et -z)
-  //   ↓
-  // MCP channels paramétrés
-  virtual G4VPhysicalVolume* Construct();
-
-  // Appelée par Geant4 après la construction de la géométrie.
-  // Les champs MCP sont locaux et attachés aux volumes cylindriques
-  // construits dans Construct().
-  virtual void ConstructSDandField();
-
-  // Indique si le volume logique appartient à un canal de l'un des MCP.
-  G4bool IsChannelLogicalVolume(
-    const G4LogicalVolume* logicalVolume) const;
-
-  // Retourne +1 pour un canal côté +z, -1 pour un canal côté -z,
-  // et 0 si le volume n'est pas un canal MCP.
-  G4int GetChannelSide(const G4LogicalVolume* logicalVolume) const;
-
-  // Retourne le côté et l'index de la plaque contenant le canal.
-  // Retourne false si le volume logique n'est pas un canal MCP.
-  G4bool GetChannelInfo(const G4LogicalVolume* logicalVolume,
-                        G4int& side,
-                        G4int& mcpIndex) const;
-
-  // Retourne le côté et l'index d'un corps MCP.
-  // Retourne false si le volume logique n'est pas un MCP_body.
-  G4bool GetMcpInfo(const G4LogicalVolume* logicalVolume,
-                    G4int& side,
-                    G4int& mcpIndex) const;
-
-  // Nombre de plaques dans chaque pile MCP.
-  G4int GetNumberOfMCPs() const;
-
-  // Sélectionne le matériau MCP depuis le code ou une macro Geant4.
-  void SetDetectorMaterial(const G4String& materialName);
-  void SetStackElectricFieldsEnabled(G4bool enabled);
-  void SetStackFieldMagnitude(G4double magnitude);
-  void SetFieldRegionRadialMargin(G4double margin);
-  void SetFieldRegionZMargin(G4double margin);
-
-  // Indique si le volume logique appartient au dernier MCP
-  // de l'une des deux piles.
-  G4bool IsLastMcpLogicalVolume(
-    const G4LogicalVolume* logicalVolume) const;
-
-  // Retourne le côté du dernier MCP: +1, -1 ou 0.
-  G4int GetLastMcpSide(const G4LogicalVolume* logicalVolume) const;
+  void SetStackCount(G4int side, G4int count);
+  G4int GetStackCount(G4int side) const;
+  void SetPlateThickness(G4double value) { fPlateThickness = value; }
+  void SetPlateRadius(G4double value) { fPlateRadius = value; }
+  void SetFirstPlateZ(G4double value) { fFirstPlateZ = value; }
+  void SetStackGap(G4double value) { fStackGap = value; }
+  void SetChannelDiameter(G4double value) { fChannelDiameter = value; }
+  void SetChannelPitch(G4double value) { fChannelPitch = value; }
+  void SetChannelAngle(G4double value) { fChannelAngle = value; }
+  void SetChevron(G4bool value) { fChevron = value; }
+  void SetEdgeMarginFraction(G4double value) { fEdgeMarginFraction = value; }
+  void SetWorldSize(G4double value) { fWorldSize = value; }
+  void SetProductionCut(G4double value);
+  void SetKillGammaOnExit(G4bool value) { fKillGammaOnExit = value; }
+  G4bool KillGammaOnExit() const { return fKillGammaOnExit; }
+  void PrintConfiguration() const;
 
 private:
-
-  // Définit les matériaux utilisés dans la simulation.
-  //
-  // Actuellement :
-  // - air pour le monde ;
-  // - verre au plomb pour le MCP ;
-  // - vide (Galactic) pour les canaux.
   void DefineMaterials();
-
-  // Construit le volume World.
-  //
-  // Le World contient l'ensemble de la simulation.
+  void CleanGeometry();
   G4VPhysicalVolume* BuildWorld();
-
-  // Construit le volume cylindrique qui porte le champ local d'une pile MCP.
-  G4LogicalVolume* BuildElectricFieldRegion(G4int side);
-
-  // Construit une pile MCP complète du côté demandé (+1 ou -1).
-  void BuildMcpStack(G4int side,
-                     G4LogicalVolume* motherLogicalVolume,
-                     G4double motherCenterZ);
-
-  // Construit un étage MCP complet à la position et à l'angle demandés.
-  void BuildMCP(G4int side,
-                G4int mcpIndex,
-                G4double positionZ,
-                G4double channelAngle,
-                G4LogicalVolume* motherLogicalVolume,
-                G4double motherCenterZ);
-
-  // Construit les canaux dans le volume logique de l'étage concerné.
-  G4int BuildChannels(G4LogicalVolume* mcpLogicalVolume,
+  void BuildStack(G4int side);
+  void BuildPlate(G4int side, G4int stackIndex);
+  G4int BuildChannels(G4LogicalVolume* mother,
                       G4int side,
-                      G4int mcpIndex,
-                      G4double channelAngle);
+                      G4int stackIndex,
+                      G4double angle);
+  const std::vector<G4ThreeVector>& ChannelPositions();
+  G4double PlateCentreZ(G4int side, G4int stackIndex) const;
+  G4double RequiredWorldSize() const;
 
-  // Calcule les positions des centres des canaux.
-  //
-  // Les positions sont organisées selon
-  // un réseau hexagonal.
-  //
-  // detectorRadius :
-  //   rayon du MCP.
-  //
-  // channelRadius :
-  //   rayon d'un canal.
-  //
-  // channelPitch :
-  //   distance entre deux canaux voisins.
-  //
-  // safeZone :
-  //   marge de sécurité près du bord du MCP.
-  std::vector<G4ThreeVector> ComputeChannelPositions(
-    G4double detectorRadius,
-    G4double channelRadius,
-    G4double channelPitch,
-    G4double safeZone) const;
-
-  // =====================================================
-  // VOLUMES LOGIQUES
-  // =====================================================
-
-  // Volume logique du monde.
-  G4LogicalVolume* fWorldLogicalVolume;
-
-  // Tous les corps MCP construits. Cette liste permet de changer leur
-  // matériau après l'initialisation sans reconstruire la géométrie.
-  std::vector<G4LogicalVolume*> fDetectorLogicalVolumes;
-  std::vector<G4int> fDetectorSides;
-  std::vector<G4int> fDetectorMcpIndices;
-
-  // Volumes logiques des canaux et côté correspondant.
-  std::vector<G4LogicalVolume*> fChannelLogicalVolumes;
-  std::vector<G4int> fChannelSides;
-  std::vector<G4int> fChannelMcpIndices;
-
-  // Corps et canaux du dernier étage de chaque pile.
-  std::vector<G4LogicalVolume*> fLastMcpLogicalVolumes;
-  std::vector<G4LogicalVolume*> fLastChannelLogicalVolumes;
-  std::vector<G4int> fLastMcpSides;
-
-  // =====================================================
-  // MATERIAUX
-  // =====================================================
-
-  // Matériau du monde.
-  //
-  // Actuellement : G4_AIR.
-  G4Material* fWorldMaterial;
-
-  // Matériau du corps du MCP.
-  //
-  // Verre plombé custom Pb-SiO2.
-  G4Material* fDetectorMaterial;
-  G4String fDetectorMaterialName;
-
-  // Matériau des canaux.
-  //
-  // Actuellement : G4_Galactic
-  G4Material* fChannelMaterial;
-
-  // Commandes UI du détecteur, notamment /mcp/setMaterial.
+  // Volumes and materials belong to Geant4 stores; this class owns the cuts,
+  // the messenger and the parameterisations.
+  G4LogicalVolume* fWorldLogicalVolume = nullptr;
+  std::vector<G4LogicalVolume*> fBodyVolumes;
+  std::vector<HoleParameterisation*> fParameterisations;
+  std::map<const G4LogicalVolume*, std::pair<G4int, G4int>> fBodyIds;
+  std::map<const G4LogicalVolume*, std::pair<G4int, G4int>> fChannelIds;
+  std::vector<G4ThreeVector> fChannelPositions;
+  G4Material* fVacuum = nullptr;
+  G4Material* fDetectorMaterial = nullptr;
+  G4ProductionCuts* fMcpProductionCuts;
+  G4Region* fMcpRegion = nullptr;
   DetectorMessenger* fMessenger;
 
-  // Champs électriques locaux des deux piles MCP.
-  ElectricFieldSetup* fPlusStackFieldSetup;
-  ElectricFieldSetup* fMinusStackFieldSetup;
-
-  G4bool fEnableStackElectricFields;
-  G4double fStackFieldMagnitude;
-  G4double fFieldRegionRadialMargin;
-  G4double fFieldRegionZMargin;
+  G4int fStackCountPlus = 1;
+  G4int fStackCountMinus = 1;
+  G4double fPlateThickness = 1500.0*micrometer;
+  G4double fPlateRadius = 0.5*50000.0*micrometer;
+  G4double fFirstPlateZ = 1.0*cm;
+  G4double fStackGap = 100.0*micrometer;
+  G4double fChannelDiameter = 25.0*micrometer;
+  G4double fChannelPitch = 31.0*micrometer;
+  G4double fChannelAngle = 8.0*deg;
+  G4double fEdgeMarginFraction = 0.2;
+  G4double fWorldSize = 10.0*cm;
+  G4bool fChevron = true;
+  G4bool fKillGammaOnExit = false;
 };
-
 #endif

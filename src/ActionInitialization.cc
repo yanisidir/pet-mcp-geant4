@@ -1,35 +1,22 @@
 #include "ActionInitialization.hh"
-
-#include "DetectorConstruction.hh"
 #include "EventAction.hh"
 #include "PrimaryGeneratorAction.hh"
 #include "RunAction.hh"
 #include "SteppingAction.hh"
-#include "TrackingAction.hh"
 
 ActionInitialization::ActionInitialization(const DetectorConstruction* detector)
-  : G4VUserActionInitialization(),
-    fDetector(detector)
-{
-}
-
-ActionInitialization::~ActionInitialization()
+  : fDetector(detector),
+    fGenerator(new PrimaryGeneratorAction),
+    fRunAction(new RunAction(detector))
 {
 }
 
 void ActionInitialization::Build() const
 {
-  SetUserAction(new PrimaryGeneratorAction);
-  RunAction* runAction = new RunAction;
-  SetUserAction(runAction);
-
-  EventAction* eventAction = new EventAction(fDetector, runAction);
+  // Geant4 takes ownership of every action registered here.
+  SetUserAction(fGenerator);
+  SetUserAction(fRunAction);
+  auto* eventAction = new EventAction(fRunAction);
   SetUserAction(eventAction);
   SetUserAction(new SteppingAction(fDetector, eventAction));
-  SetUserAction(new TrackingAction(fDetector, eventAction));
-}
-
-void ActionInitialization::BuildForMaster() const
-{
-  SetUserAction(new RunAction);
 }

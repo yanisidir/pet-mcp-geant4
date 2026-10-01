@@ -1,0 +1,12 @@
+# Source de reference.
+
+/source/particle gamma
+/source/energy 511 keV
+/source/backToBack true
+/source/perEvent 1
+
+/source/position 0 0 0 mm
+/source/positionSigma 0 mm
+
+/source/coneAxis 0 0 1
+/source/coneHalfAngle 25 deg

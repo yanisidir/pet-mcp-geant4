@@ -1,0 +1,6 @@
+# Un point de scan.mac. Alias attendus : {stacks}, {events}.
+# /mcp/stacks reconstruit la geometrie, pas de /run/initialize ici.
+
+/mcp/stacks {stacks}
+/output/file mcp_scan_stacks{stacks}.root
+/run/beamOn {events}

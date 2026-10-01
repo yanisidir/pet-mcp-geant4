@@ -1,146 +1,179 @@
 #include "DetectorMessenger.hh"
-
 #include "DetectorConstruction.hh"
 
-#include "G4SystemOfUnits.hh"
+#include "G4RunManager.hh"
+#include "G4StateManager.hh"
 #include "G4UIcmdWithABool.hh"
+#include "G4UIcmdWithADouble.hh"
 #include "G4UIcmdWithADoubleAndUnit.hh"
-#include "G4UIcmdWithAString.hh"
+#include "G4UIcmdWithAnInteger.hh"
+#include "G4UIcmdWithoutParameter.hh"
 #include "G4UIdirectory.hh"
-#include "G4UnitsTable.hh"
-#include "G4ios.hh"
 
 namespace
 {
-  void DefineElectricFieldUnits()
+  template <typename Command>
+  std::unique_ptr<Command> MakeCommand(const char* path,
+                                       G4UImessenger* messenger,
+                                       const char* guidance)
   {
-    static G4bool unitsDefined = false;
-    if (unitsDefined) {
-      return;
-    }
+    auto command = std::make_unique<Command>(path, messenger);
+    command->SetGuidance(guidance);
+    command->AvailableForStates(G4State_PreInit, G4State_Idle);
+    return command;
+  }
 
-    new G4UnitDefinition("kilovolt/mm",
-                         "kV/mm",
-                         "Electric field",
-                         kilovolt/mm);
-    new G4UnitDefinition("volt/mm",
-                         "V/mm",
-                         "Electric field",
-                         volt/mm);
-    unitsDefined = true;
+  template <typename Command>
+  std::unique_ptr<Command> MakeLengthCommand(const char* path,
+                                             G4UImessenger* messenger,
+                                             const char* guidance,
+                                             const char* parameterName,
+                                             const char* defaultUnit)
+  {
+    auto command = MakeCommand<Command>(path, messenger, guidance);
+    command->SetParameterName(parameterName, false);
+    command->SetDefaultUnit(defaultUnit);
+    return command;
   }
 }
 
 DetectorMessenger::DetectorMessenger(DetectorConstruction* detector)
-  : G4UImessenger(),
-    fDetector(detector),
-    fMcpDirectory(new G4UIdirectory("/mcp/")),
-    fMaterialCommand(nullptr),
-    fEnableStackFieldsCommand(nullptr),
-    fStackFieldMagnitudeCommand(nullptr),
-    fFieldRegionRadialMarginCommand(nullptr),
-    fFieldRegionZMarginCommand(nullptr)
+  : fDetector(detector)
 {
-  DefineElectricFieldUnits();
+  fDirectory = std::make_unique<G4UIdirectory>("/mcp/");
+  fDirectory->SetGuidance("MCP geometry configuration.");
 
-  fMcpDirectory->SetGuidance("MCP detector controls.");
+  fStacksPlusCmd = MakeCommand<G4UIcmdWithAnInteger>(
+    "/mcp/stacksPlus", this,
+    "Number of MCP plates stacked on the +z side (0 removes the side).");
+  fStacksPlusCmd->SetParameterName("count", false);
+  fStacksPlusCmd->SetRange("count >= 0");
 
-  fMaterialCommand =
-    new G4UIcmdWithAString("/mcp/setMaterial", this);
-  fMaterialCommand->SetGuidance("Select the material used by all MCP bodies.");
-  fMaterialCommand->SetParameterName("materialName", false);
-  fMaterialCommand->SetCandidates(
-    "GlassLead25Perc GlassLead30Perc GlassLead35Perc "
-    "GlassLead40Perc GlassLead45Perc GlassLead50Perc "
-    "GlassLead60Perc GlassLead75Perc");
-  fMaterialCommand->AvailableForStates(G4State_PreInit, G4State_Idle);
+  fStacksMinusCmd = MakeCommand<G4UIcmdWithAnInteger>(
+    "/mcp/stacksMinus", this,
+    "Number of MCP plates stacked on the -z side (0 removes the side).");
+  fStacksMinusCmd->SetParameterName("count", false);
+  fStacksMinusCmd->SetRange("count >= 0");
 
-  fEnableStackFieldsCommand =
-    new G4UIcmdWithABool("/mcp/enableStackElectricFields", this);
-  fEnableStackFieldsCommand->SetGuidance(
-    "Enable or disable the local electric fields around MCP stacks.");
-  fEnableStackFieldsCommand->SetParameterName("enabled", false);
-  fEnableStackFieldsCommand->AvailableForStates(G4State_PreInit,
-                                                G4State_Idle);
+  fStacksCmd = MakeCommand<G4UIcmdWithAnInteger>(
+    "/mcp/stacks", this,
+    "Shortcut: same number of plates on both sides.");
+  fStacksCmd->SetParameterName("count", false);
+  fStacksCmd->SetRange("count >= 0");
 
-  fStackFieldMagnitudeCommand =
-    new G4UIcmdWithADoubleAndUnit("/mcp/stackFieldMagnitude", this);
-  fStackFieldMagnitudeCommand->SetGuidance(
-    "Set the magnitude of the local MCP stack electric fields.");
-  fStackFieldMagnitudeCommand->SetParameterName("magnitude", false);
-  fStackFieldMagnitudeCommand->SetDefaultUnit("kV/mm");
-  fStackFieldMagnitudeCommand->AvailableForStates(G4State_PreInit,
-                                                  G4State_Idle);
+  fFirstPlateZCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/firstPlateZ", this,
+    "Distance from the origin to the centre of the first plate of a stack.",
+    "z", "cm");
 
-  fFieldRegionRadialMarginCommand =
-    new G4UIcmdWithADoubleAndUnit("/mcp/fieldRegionRadialMargin", this);
-  fFieldRegionRadialMarginCommand->SetGuidance(
-    "Set the radial margin around each MCP stack field region.");
-  fFieldRegionRadialMarginCommand->SetParameterName("margin", false);
-  fFieldRegionRadialMarginCommand->SetDefaultUnit("mm");
-  fFieldRegionRadialMarginCommand->SetUnitCategory("Length");
-  fFieldRegionRadialMarginCommand->AvailableForStates(G4State_PreInit,
-                                                       G4State_Idle);
+  fStackGapCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/stackGap", this,
+    "Vacuum gap between two consecutive plates of the same stack.",
+    "gap", "um");
 
-  fFieldRegionZMarginCommand =
-    new G4UIcmdWithADoubleAndUnit("/mcp/fieldRegionZMargin", this);
-  fFieldRegionZMarginCommand->SetGuidance(
-    "Set the z margin before and after each MCP stack field region.");
-  fFieldRegionZMarginCommand->SetParameterName("margin", false);
-  fFieldRegionZMarginCommand->SetDefaultUnit("mm");
-  fFieldRegionZMarginCommand->SetUnitCategory("Length");
-  fFieldRegionZMarginCommand->AvailableForStates(G4State_PreInit,
-                                                  G4State_Idle);
+  fThicknessCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/plateThickness", this, "Thickness of one MCP plate.",
+    "thickness", "um");
+
+  fRadiusCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/plateRadius", this, "Radius of one MCP plate.", "radius", "mm");
+
+  fChannelDiameterCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/channelDiameter", this, "Diameter of a vacuum channel.",
+    "diameter", "um");
+
+  fChannelPitchCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/channelPitch", this, "Hexagonal pitch between channels.",
+    "pitch", "um");
+
+  fChannelAngleCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/channelAngle", this,
+    "Channel bias angle in the x-z plane; the sign follows the side.",
+    "angle", "deg");
+
+  fChevronCmd = MakeCommand<G4UIcmdWithABool>(
+    "/mcp/chevron", this,
+    "Alternate the channel angle sign from one plate to the next "
+    "(chevron stack).");
+  fChevronCmd->SetParameterName("chevron", true);
+  fChevronCmd->SetDefaultValue(true);
+
+  fEdgeMarginCmd = MakeCommand<G4UIcmdWithADouble>(
+    "/mcp/edgeMarginFraction", this,
+    "Fraction of the plate radius kept free of channels at the rim.");
+  fEdgeMarginCmd->SetParameterName("fraction", false);
+  fEdgeMarginCmd->SetRange("fraction >= 0. && fraction < 1.");
+
+  fWorldSizeCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/worldSize", this,
+    "Full side of the cubic world; enlarged automatically if too small.",
+    "size", "cm");
+
+  fProductionCutCmd = MakeLengthCommand<G4UIcmdWithADoubleAndUnit>(
+    "/mcp/productionCut", this,
+    "Secondary production cut inside the MCP region.", "cut", "um");
+
+  fKillGammaCmd = MakeCommand<G4UIcmdWithABool>(
+    "/mcp/killGammaOnExit", this,
+    "Kill a gamma when it leaves the plate it is in. Set it to false for "
+    "stacks of more than one plate so gammas can reach the next plate.");
+  fKillGammaCmd->SetParameterName("kill", true);
+  fKillGammaCmd->SetDefaultValue(true);
+
+  fPrintCmd = MakeCommand<G4UIcmdWithoutParameter>(
+    "/mcp/print", this, "Print the current MCP configuration.");
 }
 
-DetectorMessenger::~DetectorMessenger()
-{
-  delete fFieldRegionZMarginCommand;
-  delete fFieldRegionRadialMarginCommand;
-  delete fStackFieldMagnitudeCommand;
-  delete fEnableStackFieldsCommand;
-  delete fMaterialCommand;
-  delete fMcpDirectory;
-}
+DetectorMessenger::~DetectorMessenger() = default;
 
-void DetectorMessenger::SetNewValue(G4UIcommand* command,
-                                    G4String newValue)
+void DetectorMessenger::SetNewValue(G4UIcommand* command, G4String value)
 {
-  if (!fDetector) {
-    return;
+  G4bool geometryChanged = true;
+
+  if (command == fStacksPlusCmd.get()) {
+    fDetector->SetStackCount(1, G4UIcmdWithAnInteger::GetNewIntValue(value));
+  } else if (command == fStacksMinusCmd.get()) {
+    fDetector->SetStackCount(-1, G4UIcmdWithAnInteger::GetNewIntValue(value));
+  } else if (command == fStacksCmd.get()) {
+    const G4int count = G4UIcmdWithAnInteger::GetNewIntValue(value);
+    fDetector->SetStackCount(1, count);
+    fDetector->SetStackCount(-1, count);
+  } else if (command == fFirstPlateZCmd.get()) {
+    fDetector->SetFirstPlateZ(fFirstPlateZCmd->GetNewDoubleValue(value));
+  } else if (command == fStackGapCmd.get()) {
+    fDetector->SetStackGap(fStackGapCmd->GetNewDoubleValue(value));
+  } else if (command == fThicknessCmd.get()) {
+    fDetector->SetPlateThickness(fThicknessCmd->GetNewDoubleValue(value));
+  } else if (command == fRadiusCmd.get()) {
+    fDetector->SetPlateRadius(fRadiusCmd->GetNewDoubleValue(value));
+  } else if (command == fChannelDiameterCmd.get()) {
+    fDetector->SetChannelDiameter(
+      fChannelDiameterCmd->GetNewDoubleValue(value));
+  } else if (command == fChannelPitchCmd.get()) {
+    fDetector->SetChannelPitch(fChannelPitchCmd->GetNewDoubleValue(value));
+  } else if (command == fChannelAngleCmd.get()) {
+    fDetector->SetChannelAngle(fChannelAngleCmd->GetNewDoubleValue(value));
+  } else if (command == fChevronCmd.get()) {
+    fDetector->SetChevron(G4UIcmdWithABool::GetNewBoolValue(value));
+  } else if (command == fEdgeMarginCmd.get()) {
+    fDetector->SetEdgeMarginFraction(
+      G4UIcmdWithADouble::GetNewDoubleValue(value));
+  } else if (command == fWorldSizeCmd.get()) {
+    fDetector->SetWorldSize(fWorldSizeCmd->GetNewDoubleValue(value));
+  } else if (command == fProductionCutCmd.get()) {
+    fDetector->SetProductionCut(fProductionCutCmd->GetNewDoubleValue(value));
+  } else if (command == fKillGammaCmd.get()) {
+    fDetector->SetKillGammaOnExit(G4UIcmdWithABool::GetNewBoolValue(value));
+    geometryChanged = false;  // Stepping rule only, the volumes are unchanged.
+  } else if (command == fPrintCmd.get()) {
+    fDetector->PrintConfiguration();
+    geometryChanged = false;
   }
 
-  if (command == fMaterialCommand) {
-    fDetector->SetDetectorMaterial(newValue);
-  } else if (command == fEnableStackFieldsCommand) {
-    fDetector->SetStackElectricFieldsEnabled(
-      fEnableStackFieldsCommand->GetNewBoolValue(newValue));
-  } else if (command == fStackFieldMagnitudeCommand) {
-    const G4double magnitude =
-      fStackFieldMagnitudeCommand->GetNewDoubleValue(newValue);
-    if (magnitude <= 0.0) {
-      G4cout << "WARNING: /mcp/stackFieldMagnitude must be positive. "
-             << "Keeping previous value." << G4endl;
-      return;
-    }
-    fDetector->SetStackFieldMagnitude(magnitude);
-  } else if (command == fFieldRegionRadialMarginCommand) {
-    const G4double margin =
-      fFieldRegionRadialMarginCommand->GetNewDoubleValue(newValue);
-    if (margin < 0.0) {
-      G4cout << "WARNING: /mcp/fieldRegionRadialMargin cannot be negative. "
-             << "Keeping previous value." << G4endl;
-      return;
-    }
-    fDetector->SetFieldRegionRadialMargin(margin);
-  } else if (command == fFieldRegionZMarginCommand) {
-    const G4double margin =
-      fFieldRegionZMarginCommand->GetNewDoubleValue(newValue);
-    if (margin < 0.0) {
-      G4cout << "WARNING: /mcp/fieldRegionZMargin cannot be negative. "
-             << "Keeping previous value." << G4endl;
-      return;
-    }
-    fDetector->SetFieldRegionZMargin(margin);
+  // A geometry change after /run/initialize needs an explicit rebuild.
+  const G4ApplicationState state =
+    G4StateManager::GetStateManager()->GetCurrentState();
+  if (geometryChanged && state != G4State_PreInit) {
+    G4RunManager::GetRunManager()->ReinitializeGeometry();
   }
 }

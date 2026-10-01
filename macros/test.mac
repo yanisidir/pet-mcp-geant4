@@ -1,0 +1,12 @@
+/control/verbose 0
+/run/verbose 0
+/event/verbose 0
+/tracking/verbose 0
+/random/setSeeds 42 4242
+
+/control/macroPath .:macros:../macros:../../macros
+/control/execute geometry.mac
+/control/execute source.mac
+
+/run/initialize
+/run/beamOn 10

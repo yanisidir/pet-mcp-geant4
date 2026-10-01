@@ -1,17 +1,22 @@
+# Geometrie nominale : affichage tres lourd, voir vis_light.mac.
+
 /control/verbose 0
 /run/verbose 0
 /event/verbose 0
-/tracking/verbose 1
+/tracking/verbose 0
+
+/control/macroPath .:macros:../macros:../../macros
+/control/execute geometry.mac
+/control/execute source.mac
 
 /run/initialize
-
-/vis/open 
+/vis/open OGL
+/vis/verbose errors
 /vis/drawVolume
-
-/tracking/storeTrajectory 1
-/vis/scene/add/trajectories smooth
-
-/vis/scene/endOfEventAction accumulate 100
-#/vis/scene/endOfEventAction refresh
-
-/run/beamOn 10
+/vis/scene/add/axes 0 0 0 2 cm
+/vis/ogl/set/transparency true
+/vis/viewer/set/background white
+/vis/viewer/set/style surface
+/vis/viewer/set/viewpointThetaPhi 70 25
+/vis/viewer/zoomTo 0.9
+/vis/viewer/flush

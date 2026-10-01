@@ -1,46 +1,55 @@
-# Build directories and CMake-generated files
-build/
-bin/
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-compile_commands.json
+# Build trees and CMake products
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+/compile_commands.json
+/CMakeUserPresets.json
 
-# Compiled objects and libraries
+# Compiled files
 *.o
+*.obj
+*.a
 *.so
 *.dylib
+*.dll
+*.exe
+*.d
 
-# ROOT-generated files and simulation outputs
+# Generated ROOT files and support files
 *.root
 *.pcm
-*.d
 *.dict.*
-root_output/
 
-# Generated figures
+# Old results 
+/old_output/
+
+# Generated visualisation and analysis files
 *.png
 *.pdf
-*.eps
-*.ps
 *.svg
-Fig/current/
-Fig/tmp/
-Fig/test/
+*.csv
 
-# Logs
+# Python and notebook caches
+__pycache__/
+*.py[cod]
+**/.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs, temporary files and editor settings
 *.log
 nohup.out
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Editor and operating-system files
-.vscode/
-.idea/
+*.tmp
+*.temp
+*.bak
 *~
 *.swp
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
+

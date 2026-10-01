@@ -1,0 +1,15 @@
+# 500 000 evenements, soit 1 000 000 de gammas avec backToBack.
+
+/control/verbose 0
+/run/verbose 0
+/event/verbose 0
+/tracking/verbose 0
+
+/control/macroPath .:macros:../macros:../../macros
+/control/execute geometry.mac
+/control/execute source.mac
+/source/print
+
+/run/initialize
+/run/printProgress 10000
+/run/beamOn 500000

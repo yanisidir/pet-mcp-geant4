@@ -3,17 +3,11 @@
 
 #include "FTFP_BERT.hh"
 #include "G4EmLivermorePhysics.hh"
-#include "G4EmPenelopePhysics.hh"
-#include "G4EmStandardPhysics_option4.hh"
+#include "G4EmParameters.hh"
 #include "G4RunManagerFactory.hh"
-#include "G4SteppingVerbose.hh"
 #include "G4UIExecutive.hh"
 #include "G4UImanager.hh"
 #include "G4VisExecutive.hh"
-
-#include "TFile.h"
-#include "TROOT.h"
-#include "TTree.h"
 
 int main(int argc, char** argv)
 {
@@ -21,22 +15,6 @@ int main(int argc, char** argv)
   if (argc == 1) {
     ui = new G4UIExecutive(argc, argv);
   }
-
-  G4SteppingVerbose::UseBestUnit(4);
-
-  // ROOT objects are created by Geant4 worker threads, so initialize ROOT
-  // once on the main thread before the run starts.
-  ROOT::EnableThreadSafety();
-  TFile::Class();
-  TTree::Class();
-
-  //auto* runManager =
-    //G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
-
-  // auto* runManager = G4RunManagerFactory::CreateRunManager();
-
-  // G4int nThreads = 1;
-  // runManager->SetNumberOfThreads(nThreads);
 
   auto* runManager =
     G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
@@ -48,17 +26,10 @@ int main(int argc, char** argv)
   // electromagnetic physics with the Livermore low-energy EM models.
   FTFP_BERT* physicsList = new FTFP_BERT(0);  // 0 means "don't print verbose output"
 
-  // Option 1 : physique EM standard Geant4
-
-  // Option 2 : physique EM Livermore
   physicsList->ReplacePhysics(new G4EmLivermorePhysics(0));
 
-  // Option 3 : physique EM Penelope
-  // physicsList->ReplacePhysics(new G4EmPenelopePhysics(0));
-
-  // Option 4 : physique EM option 4
-  // physicsList->ReplacePhysics(new G4EmStandardPhysics_option4(0));
-
+  // Include Auger electrons from atomic relaxation in lead glass.
+  G4EmParameters::Instance()->SetAuger(true);
 
   runManager->SetUserInitialization(physicsList);
   runManager->SetUserInitialization(new ActionInitialization(detector));
@@ -68,18 +39,19 @@ int main(int argc, char** argv)
 
   G4UImanager* uiManager = G4UImanager::GetUIpointer();
 
+  G4int status = 0;
   if (ui) {
-    uiManager->ApplyCommand("/control/execute macros/vis.mac");
+    status = uiManager->ApplyCommand("/control/execute macros/vis.mac");
     ui->SessionStart();
     delete ui;
   } else {
     G4String command = "/control/execute ";
     G4String fileName = argv[1];
-    uiManager->ApplyCommand(command + fileName);
+    status = uiManager->ApplyCommand(command + fileName);
   }
 
   delete visManager;
   delete runManager;
 
-  return 0;
+  return status == 0 ? 0 : 1;
 }
