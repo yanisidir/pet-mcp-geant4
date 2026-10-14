@@ -1,6 +1,7 @@
 #include "TCanvas.h"
 #include "TFile.h"
 #include "TGraphErrors.h"
+#include "TSystem.h"
 #include "TTree.h"
 
 #include <cmath>
@@ -103,5 +104,6 @@ void AnalyzeStackScan(const char* fileName = "scan_stacks.root")
   canvas->SetGrid();
   graph->Draw("APL");
   canvas->Update();
-  canvas->SaveAs("scan_stacks.png");
+  gSystem->mkdir("figures", kTRUE);
+  canvas->SaveAs("figures/scan_stacks.png");
 }

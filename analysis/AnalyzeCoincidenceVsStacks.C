@@ -2,6 +2,7 @@
 #include "TEfficiency.h"
 #include "TFile.h"
 #include "TGraphAsymmErrors.h"
+#include "TSystem.h"
 #include "TTree.h"
 
 #include <iomanip>
@@ -25,7 +26,7 @@
 // test du score et reste borne (cf. Wilson 1927, Agresti & Coull 1998).
 void AnalyzeCoincidenceVsStacks(
   const char* fileName = "scan_stacks.root",
-  const char* plotName = "coincidence_vs_stacks.png")
+  const char* plotName = "figures/coincidence_vs_stacks.png")
 {
   TFile file(fileName, "READ");
   if (file.IsZombie()) {
@@ -146,6 +147,7 @@ void AnalyzeCoincidenceVsStacks(
   canvas->SetGrid();
   graph->Draw("APL");
   canvas->Update();
+  gSystem->mkdir("figures", kTRUE);
   canvas->SaveAs(plotName);
 
   std::cout << "\nFigure : " << plotName << '\n';

@@ -1,6 +1,7 @@
 #include "TCanvas.h"
 #include "TFile.h"
 #include "TH1D.h"
+#include "TSystem.h"
 #include "TTree.h"
 
 #include <iomanip>
@@ -56,6 +57,7 @@ void AnalyzePhoton(const char* fileName = "mcp_output.root")
     "electronEnergyCanvas", "Spectre en energie des electrons", 900, 600);
   spectrum->Draw();
   canvas->Update();
-  canvas->SaveAs("spectre.png");
+  gSystem->mkdir("figures", kTRUE);
+  canvas->SaveAs("figures/spectre.png");
 
 }
