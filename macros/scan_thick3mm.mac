@@ -1,0 +1,33 @@
+# Balayage 1+1 a 5+5 plaques par cote, plaques epaisses de 3 mm.
+#
+# Seule difference avec geometry.mac : /mcp/plateThickness passe de
+# 1000 um a 3 mm. Tout le reste (rayon 25 mm, pitch 31 um, angle 8 deg,
+# gap 100 um, cone 25 deg, cut 1 um) reste aux valeurs de reference.
+#
+# Sorties distinctes de celles du scan a 1 mm pour ne rien ecraser :
+#   scan_thick3mm.root          (ScanTree cumulatif, une ligne par point)
+#   mcp_thick3mm_stacks<N>.root (detail par point)
+#
+# Le cout est domine par la construction geometrique (~1,5 M de canaux
+# par plaque, soit 30 plaques construites sur l'ensemble du balayage),
+# pas par le nombre d'evenements.
+
+/control/verbose 0
+/run/verbose 0
+/event/verbose 0
+/tracking/verbose 0
+/random/setSeeds 42 4242
+
+/control/macroPath .:macros:../macros:../../macros
+/control/execute geometry.mac
+/control/execute source.mac
+
+/mcp/plateThickness 3 mm
+/mcp/killGammaOnExit false
+/source/print
+
+/output/scanFile scan_thick3mm.root
+/run/initialize
+
+/control/alias events 25000
+/control/foreach scan_thick3mm_point.mac stacks "1 2 3 4 5"
